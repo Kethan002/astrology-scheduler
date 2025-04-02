@@ -22,6 +22,16 @@ export default function HomePage() {
   const [canBook, setCanBook] = useState<boolean>(false);
   const [, navigate] = useLocation();
   const { user } = useAuth();
+  
+  // Get tab and section from URL params
+  useEffect(() => {
+    const searchParams = new URLSearchParams(window.location.search);
+    const tabParam = searchParams.get('tab');
+    
+    if (tabParam && ['book', 'appointments', 'profile'].includes(tabParam as string)) {
+      setActiveTab(tabParam as Tab);
+    }
+  }, []);
 
   // Check if current time is within booking window
   useEffect(() => {

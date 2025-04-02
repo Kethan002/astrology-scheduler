@@ -162,14 +162,19 @@ export default function ProfileSettings() {
   // Delete account mutation
   const deleteAccountMutation = useMutation({
     mutationFn: async () => {
-      await apiRequest("DELETE", "/api/user");
+      const res = await apiRequest("DELETE", "/api/user");
+      return await res.json();
     },
     onSuccess: () => {
       toast({
         title: "Account deleted",
         description: "Your account has been deleted successfully.",
       });
-      navigate("/auth");
+      // Force page refresh to ensure complete logout
+      queryClient.removeQueries({ queryKey: ["/api/user"] });
+      setTimeout(() => {
+        window.location.href = "/auth";
+      }, 1000);
     },
     onError: (error: Error) => {
       toast({
@@ -177,6 +182,7 @@ export default function ProfileSettings() {
         description: error.message,
         variant: "destructive",
       });
+      setDeleteDialogOpen(false);
     },
   });
 
@@ -215,7 +221,7 @@ export default function ProfileSettings() {
                 className="w-full justify-start text-left pl-4" 
                 onClick={() => {
                   setActiveSection("profile");
-                  navigate("/?tab=profile&section=profile");
+                  window.location.href = "/?tab=profile&section=profile";
                 }}
               >
                 <UserIcon className="h-4 w-4 mr-2" />
@@ -226,7 +232,7 @@ export default function ProfileSettings() {
                 className="w-full justify-start text-left pl-4" 
                 onClick={() => {
                   setActiveSection("settings");
-                  navigate("/?tab=profile&section=settings");
+                  window.location.href = "/?tab=profile&section=settings";
                 }}
               >
                 <SettingsIcon className="h-4 w-4 mr-2" />
@@ -237,7 +243,7 @@ export default function ProfileSettings() {
                 className="w-full justify-start text-left pl-4" 
                 onClick={() => {
                   setActiveSection("security");
-                  navigate("/?tab=profile&section=security");
+                  window.location.href = "/?tab=profile&section=security";
                 }}
               >
                 <Shield className="h-4 w-4 mr-2" />
@@ -248,7 +254,7 @@ export default function ProfileSettings() {
                 className="w-full justify-start text-left pl-4" 
                 onClick={() => {
                   setActiveSection("help");
-                  navigate("/?tab=profile&section=help");
+                  window.location.href = "/?tab=profile&section=help";
                 }}
               >
                 <HelpCircle className="h-4 w-4 mr-2" />

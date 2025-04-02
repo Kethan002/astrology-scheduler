@@ -12,28 +12,28 @@ export default function Header() {
   return (
     <header className="bg-primary text-white shadow-lg z-10">
       <div className="container mx-auto px-4 py-3 flex justify-between items-center">
-        <Link href="/">
-          <a className="flex items-center space-x-2">
+        <div className="flex items-center space-x-2 cursor-pointer" onClick={() => window.location.href="/"}>
             <Moon className="h-6 w-6 text-yellow-300" />
             <h1 className="font-heading font-bold text-xl md:text-2xl">Astro Appointments</h1>
-          </a>
-        </Link>
+        </div>
         <nav>
           <ul className="flex space-x-6 items-center">
             <li className="md:block">
-              <Link href="/">
-                <a className={`hover:text-yellow-300 ${location === "/" ? "text-yellow-300" : ""}`}>
-                  Home
-                </a>
-              </Link>
+              <div 
+                className={`hover:text-yellow-300 cursor-pointer ${location === "/" ? "text-yellow-300" : ""}`}
+                onClick={() => window.location.href="/"}
+              >
+                Home
+              </div>
             </li>
             {isAdmin && (
               <li className="md:block">
-                <Link href="/admin">
-                  <a className={`hover:text-yellow-300 ${location.startsWith("/admin") ? "text-yellow-300" : ""}`}>
-                    Admin
-                  </a>
-                </Link>
+                <div
+                  className={`hover:text-yellow-300 cursor-pointer ${location.startsWith("/admin") ? "text-yellow-300" : ""}`}
+                  onClick={() => window.location.href="/admin"}
+                >
+                  Admin
+                </div>
               </li>
             )}
             <li>

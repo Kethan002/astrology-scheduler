@@ -24,15 +24,16 @@ export default function UserMenu() {
   };
   
   const handleNavigateToProfile = () => {
-    navigate("/?tab=profile");
+    // Use direct location change to ensure the state is updated and query params are processed
+    window.location.href = "/?tab=profile&section=profile";
   };
   
   const handleNavigateToSettings = () => {
-    navigate("/?tab=profile&section=settings");
+    window.location.href = "/?tab=profile&section=settings";
   };
   
   const handleNavigateToHelp = () => {
-    navigate("/?tab=profile&section=help");
+    window.location.href = "/?tab=profile&section=help";
   };
   
   return (
