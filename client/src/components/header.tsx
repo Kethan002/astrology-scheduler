@@ -20,22 +20,15 @@ export default function Header() {
         </Link>
         <nav>
           <ul className="flex space-x-6 items-center">
-            <li className="hidden md:block">
+            <li className="md:block">
               <Link href="/">
                 <a className={`hover:text-yellow-300 ${location === "/" ? "text-yellow-300" : ""}`}>
                   Home
                 </a>
               </Link>
             </li>
-            <li className="hidden md:block">
-              <Link href="/?tab=appointments">
-                <a className={`hover:text-yellow-300 ${location === "/?tab=appointments" ? "text-yellow-300" : ""}`}>
-                  My Appointments
-                </a>
-              </Link>
-            </li>
             {isAdmin && (
-              <li className="hidden md:block">
+              <li className="md:block">
                 <Link href="/admin">
                   <a className={`hover:text-yellow-300 ${location.startsWith("/admin") ? "text-yellow-300" : ""}`}>
                     Admin

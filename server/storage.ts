@@ -14,6 +14,8 @@ export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  updateUser(id: number, user: Partial<User>): Promise<User | undefined>;
+  deleteUser(id: number): Promise<boolean>;
   
   getAppointments(): Promise<Appointment[]>;
   getAppointmentsByUser(userId: number): Promise<Appointment[]>;
@@ -61,6 +63,23 @@ export class DatabaseStorage implements IStorage {
       .values({ ...insertUser, isAdmin: false })
       .returning();
     return user;
+  }
+  
+  async updateUser(id: number, userUpdate: Partial<User>): Promise<User | undefined> {
+    const [updatedUser] = await db
+      .update(users)
+      .set(userUpdate)
+      .where(eq(users.id, id))
+      .returning();
+    return updatedUser;
+  }
+  
+  async deleteUser(id: number): Promise<boolean> {
+    const result = await db
+      .delete(users)
+      .where(eq(users.id, id))
+      .returning({ id: users.id });
+    return result.length > 0;
   }
   
   async getAppointments(): Promise<Appointment[]> {
@@ -253,6 +272,23 @@ export class MemStorage implements IStorage {
     const user: User = { ...insertUser, id, isAdmin: false, createdAt };
     this.users.set(id, user);
     return user;
+  }
+  
+  async updateUser(id: number, userUpdate: Partial<User>): Promise<User | undefined> {
+    const user = this.users.get(id);
+    
+    if (!user) {
+      return undefined;
+    }
+    
+    const updatedUser: User = { ...user, ...userUpdate };
+    this.users.set(id, updatedUser);
+    
+    return updatedUser;
+  }
+  
+  async deleteUser(id: number): Promise<boolean> {
+    return this.users.delete(id);
   }
   
   async getAppointments(): Promise<Appointment[]> {

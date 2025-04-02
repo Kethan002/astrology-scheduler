@@ -1,8 +1,8 @@
 import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
-import { setupAuth } from "./auth";
+import { setupAuth, comparePasswords, hashPassword } from "./auth";
 import { storage } from "./storage";
-import { insertAppointmentSchema, insertAvailableSlotSchema } from "@shared/schema";
+import { insertAppointmentSchema, insertAvailableSlotSchema, User } from "@shared/schema";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 
@@ -265,6 +265,99 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.json(slots);
     } catch (error) {
       res.status(500).json({ message: "Failed to fetch available slots" });
+    }
+  });
+  
+  // Get user profile
+  app.get("/api/user", (req, res) => {
+    if (!req.isAuthenticated()) return res.sendStatus(401);
+    
+    // Don't send password to client
+    const { password, ...userWithoutPassword } = req.user as User;
+    
+    res.json(userWithoutPassword);
+  });
+  
+  // Update user profile
+  app.patch("/api/user", isAuthenticated, async (req, res) => {
+    try {
+      const { name, email, phone } = req.body;
+      
+      // Update user profile (mobile field in database maps to phone in UI)
+      const updatedUser = await storage.updateUser(req.user!.id, { 
+        name, 
+        email,
+        mobile: phone
+      });
+      
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Don't send password to client
+      const { password, ...userWithoutPassword } = updatedUser;
+      
+      res.json(userWithoutPassword);
+    } catch (error) {
+      console.error("Error updating user:", error);
+      res.status(500).json({ message: "Failed to update user" });
+    }
+  });
+  
+  // Update user password
+  app.patch("/api/user/password", isAuthenticated, async (req, res) => {
+    try {
+      const { currentPassword, newPassword } = req.body;
+      
+      // Verify current password
+      const user = await storage.getUser(req.user!.id);
+      
+      if (!user) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      const isPasswordValid = await comparePasswords(currentPassword, user.password);
+      
+      if (!isPasswordValid) {
+        return res.status(400).json({ message: "Current password is incorrect" });
+      }
+      
+      // Hash new password and update
+      const hashedPassword = await hashPassword(newPassword);
+      const updatedUser = await storage.updateUser(req.user!.id, { password: hashedPassword });
+      
+      if (!updatedUser) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      res.json({ message: "Password updated successfully" });
+    } catch (error) {
+      console.error("Error updating password:", error);
+      res.status(500).json({ message: "Failed to update password" });
+    }
+  });
+  
+  // Delete user account
+  app.delete("/api/user", isAuthenticated, async (req, res) => {
+    try {
+      const result = await storage.deleteUser(req.user!.id);
+      
+      if (!result) {
+        return res.status(404).json({ message: "User not found" });
+      }
+      
+      // Log the user out
+      req.logout((err) => {
+        if (err) {
+          console.error("Error logging out:", err);
+          return res.status(500).json({ message: "Error during logout" });
+        }
+        
+        res.json({ message: "User account deleted successfully" });
+      });
+    } catch (error) {
+      console.error("Error deleting user:", error);
+      res.status(500).json({ message: "Failed to delete user account" });
     }
   });
 

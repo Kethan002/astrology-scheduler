@@ -23,6 +23,18 @@ export default function UserMenu() {
     navigate("/auth");
   };
   
+  const handleNavigateToProfile = () => {
+    navigate("/?tab=profile");
+  };
+  
+  const handleNavigateToSettings = () => {
+    navigate("/?tab=profile&section=settings");
+  };
+  
+  const handleNavigateToHelp = () => {
+    navigate("/?tab=profile&section=help");
+  };
+  
   return (
     <DropdownMenu>
       <DropdownMenuTrigger className="flex items-center space-x-2 focus:outline-none">
@@ -35,15 +47,15 @@ export default function UserMenu() {
       <DropdownMenuContent align="end" className="w-48">
         <DropdownMenuLabel>My Account</DropdownMenuLabel>
         <DropdownMenuSeparator />
-        <DropdownMenuItem className="cursor-pointer" onClick={() => navigate("/")}>
+        <DropdownMenuItem className="cursor-pointer" onClick={handleNavigateToProfile}>
           <User className="mr-2 h-4 w-4" />
           <span>Profile</span>
         </DropdownMenuItem>
-        <DropdownMenuItem className="cursor-pointer">
+        <DropdownMenuItem className="cursor-pointer" onClick={handleNavigateToSettings}>
           <Settings className="mr-2 h-4 w-4" />
           <span>Settings</span>
         </DropdownMenuItem>
-        <DropdownMenuItem className="cursor-pointer">
+        <DropdownMenuItem className="cursor-pointer" onClick={handleNavigateToHelp}>
           <HelpCircle className="mr-2 h-4 w-4" />
           <span>Help</span>
         </DropdownMenuItem>

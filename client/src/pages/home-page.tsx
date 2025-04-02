@@ -6,6 +6,7 @@ import BookingCalendar from "@/components/booking-calendar";
 import TimeSlots from "@/components/time-slots";
 import BookingSummary from "@/components/booking-summary";
 import MyAppointments from "@/components/my-appointments";
+import ProfileSettings from "@/components/profile-settings";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { InfoIcon, AlertCircle, Clock } from "lucide-react";
 import { useLocation } from "wouter";
@@ -84,12 +85,22 @@ export default function HomePage() {
               {/* Booking instructions and rules */}
               <Alert className="bg-blue-50 border-l-4 border-blue-600 mb-8">
                 <InfoIcon className="h-4 w-4 text-blue-600" />
-                <AlertTitle className="text-blue-600">Booking Rules</AlertTitle>
-                <AlertDescription className="text-sm text-gray-600 space-y-1">
-                  <p>• You can book only one appointment per week</p>
-                  <p>• Booking window: Sunday from 8 AM to 9 AM</p>
-                  <p>• Appointments are available daily except Tuesdays and Saturdays</p>
-                  <p>• Time slots: 9 AM - 1 PM and 3 PM - 5 PM (15-minute intervals)</p>
+                <AlertTitle className="text-blue-600">Booking Rules / బుకింగ్ నియమాలు</AlertTitle>
+                <AlertDescription className="text-sm text-gray-600 space-y-3">
+                  <div className="space-y-1">
+                    <p className="font-medium text-gray-700">English:</p>
+                    <p>• You can book only one appointment per week</p>
+                    <p>• Booking window: Sunday from 8 AM to 9 AM</p>
+                    <p>• Appointments are available daily except Tuesdays and Saturdays</p>
+                    <p>• Time slots: 9 AM - 1 PM and 3 PM - 5 PM (15-minute intervals)</p>
+                  </div>
+                  <div className="space-y-1 pt-2 border-t border-gray-200">
+                    <p className="font-medium text-gray-700">తెలుగు:</p>
+                    <p>• మీరు వారానికి ఒక అపాయింట్‌మెంట్ మాత్రమే బుక్ చేసుకోవచ్చు</p>
+                    <p>• బుకింగ్ విండో: ఆదివారం ఉదయం 8 గంటల నుండి 9 గంటల వరకు</p>
+                    <p>• మంగళవారం మరియు శనివారం తప్ప ప్రతి రోజూ అపాయింట్‌మెంట్‌లు అందుబాటులో ఉంటాయి</p>
+                    <p>• టైమ్ స్లాట్‌లు: ఉదయం 9 గంటల నుండి మధ్యాహ్నం 1 గంట వరకు మరియు మధ్యాహ్నం 3 గంటల నుండి సాయంత్రం 5 గంటల వరకు (15-నిమిషాల విరామాలు)</p>
+                  </div>
                 </AlertDescription>
               </Alert>
               
@@ -138,10 +149,9 @@ export default function HomePage() {
           
           {activeTab === "profile" && (
             <div className="max-w-4xl mx-auto">
-              <h2 className="font-heading text-2xl font-bold text-gray-800 mb-6">Profile</h2>
-              <div className="bg-white rounded-lg shadow-md p-6">
-                <p className="text-gray-500 text-center">Profile settings will be available in a future update.</p>
-              </div>
+              <h2 className="font-heading text-2xl font-bold text-gray-800 mb-6">My Profile</h2>
+              
+              <ProfileSettings />
             </div>
           )}
         </div>
