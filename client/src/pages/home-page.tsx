@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Header from "@/components/header";
 import Footer from "@/components/footer";
 import TabNavigation from "@/components/tab-navigation";
@@ -7,8 +7,10 @@ import TimeSlots from "@/components/time-slots";
 import BookingSummary from "@/components/booking-summary";
 import MyAppointments from "@/components/my-appointments";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
-import { InfoIcon } from "lucide-react";
-import { Redirect, useLocation } from "wouter";
+import { InfoIcon, AlertCircle, Clock } from "lucide-react";
+import { useLocation } from "wouter";
+import { isWithinBookingWindow } from "@/lib/utils";
+import { useAuth } from "@/hooks/use-auth";
 
 type Tab = "book" | "appointments" | "profile";
 
@@ -16,7 +18,24 @@ export default function HomePage() {
   const [activeTab, setActiveTab] = useState<Tab>("book");
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<Date | null>(null);
+  const [canBook, setCanBook] = useState<boolean>(false);
   const [, navigate] = useLocation();
+  const { user } = useAuth();
+
+  // Check if current time is within booking window
+  useEffect(() => {
+    const checkBookingWindow = () => {
+      const isAdmin = user?.isAdmin || false;
+      const withinWindow = isWithinBookingWindow();
+      setCanBook(withinWindow || isAdmin);
+    };
+    
+    checkBookingWindow();
+    
+    // Check every minute
+    const interval = setInterval(checkBookingWindow, 60000);
+    return () => clearInterval(interval);
+  }, [user]);
 
   // Function to handle booking confirmation
   const handleConfirmBooking = () => {
@@ -51,13 +70,24 @@ export default function HomePage() {
             <div className="max-w-5xl mx-auto">
               <h2 className="font-heading text-2xl font-bold text-gray-800 mb-6">Book Your Astrology Consultation</h2>
               
+              {/* Booking window alert */}
+              {!canBook && !user?.isAdmin && (
+                <Alert className="bg-yellow-50 border-l-4 border-yellow-600 mb-8">
+                  <AlertCircle className="h-4 w-4 text-yellow-600" />
+                  <AlertTitle className="text-yellow-700">Booking Window Closed</AlertTitle>
+                  <AlertDescription className="text-sm text-gray-600">
+                    <p>Booking is only available on Sundays between 8 AM and 9 AM. You can browse available slots but cannot make a reservation at this time.</p>
+                  </AlertDescription>
+                </Alert>
+              )}
+              
               {/* Booking instructions and rules */}
               <Alert className="bg-blue-50 border-l-4 border-blue-600 mb-8">
                 <InfoIcon className="h-4 w-4 text-blue-600" />
                 <AlertTitle className="text-blue-600">Booking Rules</AlertTitle>
                 <AlertDescription className="text-sm text-gray-600 space-y-1">
                   <p>• You can book only one appointment per week</p>
-                  <p>• New slots open every Sunday from 5 AM to 6 AM</p>
+                  <p>• Booking window: Sunday from 8 AM to 9 AM</p>
                   <p>• Appointments are available daily except Tuesdays and Saturdays</p>
                   <p>• Time slots: 9 AM - 1 PM and 3 PM - 5 PM (15-minute intervals)</p>
                 </AlertDescription>
@@ -77,6 +107,7 @@ export default function HomePage() {
                       selectedDate={selectedDate}
                       selectedTime={selectedTime}
                       onConfirm={handleConfirmBooking}
+                      disabled={!canBook}
                     />
                   )}
                 </div>
@@ -88,9 +119,11 @@ export default function HomePage() {
                       selectedDate={selectedDate}
                       selectedTime={selectedTime}
                       onSelectTime={setSelectedTime}
+                      disabled={!canBook}
                     />
                   ) : (
                     <div className="bg-white rounded-lg shadow-md p-6 text-center">
+                      <Clock className="h-12 w-12 text-gray-300 mx-auto mb-3" />
                       <p className="text-gray-500">Please select a date to view available time slots</p>
                     </div>
                   )}

@@ -55,6 +55,20 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId,
       });
 
+      // Check if current time is within the booking window (Sunday 8-9 AM)
+      const now = new Date();
+      const currentDay = now.getDay();
+      const currentHour = now.getHours();
+      
+      // Booking is only allowed on Sundays between 8-9 AM
+      const isBookingWindow = currentDay === 0 && (currentHour >= 8 && currentHour < 9);
+      
+      if (!isBookingWindow && !req.user.isAdmin) {
+        return res.status(400).json({ 
+          message: "Booking is only available on Sunday between 8 AM and 9 AM" 
+        });
+      }
+
       // Check if the user already has an appointment in the same week
       const appointmentDate = new Date(appointmentData.date);
       const startOfWeek = new Date(appointmentDate);
@@ -82,10 +96,10 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const hours = appointmentDate.getHours();
       const minutes = appointmentDate.getMinutes();
       
-      const isMorning = (hours === 9 || hours === 10 || hours === 11 || hours === 12) && minutes % 15 === 0;
-      const isAfternoon = (hours === 15 || hours === 16) && minutes % 15 === 0;
+      const isMorningSlot = (hours >= 9 && hours < 13) && minutes % 15 === 0;
+      const isAfternoonSlot = (hours >= 15 && hours < 17) && minutes % 15 === 0;
       
-      if (!isMorning && !isAfternoon) {
+      if (!isMorningSlot && !isAfternoonSlot) {
         return res.status(400).json({ 
           message: "Appointments are only available from 9 AM - 1 PM and 3 PM - 5 PM in 15-minute intervals" 
         });
@@ -95,7 +109,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       const availableSlots = await storage.getAvailableSlotsByDate(appointmentDate);
       const slotIsAvailable = availableSlots.some(
         slot => slot.isEnabled && 
-        slot.date.getTime() === appointmentDate.getTime()
+        new Date(slot.date).getTime() === appointmentDate.getTime()
       );
       
       if (!slotIsAvailable) {
@@ -109,6 +123,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
       if (error instanceof ZodError) {
         res.status(400).json({ message: fromZodError(error).message });
       } else {
+        console.error("Error creating appointment:", error);
         res.status(500).json({ message: "Failed to create appointment" });
       }
     }

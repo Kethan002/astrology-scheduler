@@ -9,9 +9,10 @@ interface TimeSlotsProps {
   selectedDate: Date;
   selectedTime: Date | null;
   onSelectTime: (time: Date) => void;
+  disabled?: boolean;
 }
 
-export default function TimeSlots({ selectedDate, selectedTime, onSelectTime }: TimeSlotsProps) {
+export default function TimeSlots({ selectedDate, selectedTime, onSelectTime, disabled = false }: TimeSlotsProps) {
   // Get all possible time slots for the selected date
   const timeSlots = getTimeSlots(selectedDate);
   
@@ -70,11 +71,11 @@ export default function TimeSlots({ selectedDate, selectedTime, onSelectTime }: 
                   "text-center py-2 rounded-md border text-sm",
                   isSelected
                     ? "border-primary bg-blue-50 text-primary font-medium"
-                    : isAvailable
+                    : isAvailable && !disabled
                       ? "border-gray-200 hover:border-primary hover:bg-blue-50"
                       : "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed"
                 )}
-                disabled={!isAvailable}
+                disabled={!isAvailable || disabled}
                 onClick={() => onSelectTime(slot)}
               >
                 {format(slot, "h:mm a")}
@@ -106,11 +107,11 @@ export default function TimeSlots({ selectedDate, selectedTime, onSelectTime }: 
                   "text-center py-2 rounded-md border text-sm",
                   isSelected
                     ? "border-primary bg-blue-50 text-primary font-medium"
-                    : isAvailable
+                    : isAvailable && !disabled
                       ? "border-gray-200 hover:border-primary hover:bg-blue-50"
                       : "border-gray-200 bg-gray-50 text-gray-400 cursor-not-allowed"
                 )}
-                disabled={!isAvailable}
+                disabled={!isAvailable || disabled}
                 onClick={() => onSelectTime(slot)}
               >
                 {format(slot, "h:mm a")}

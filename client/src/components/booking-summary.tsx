@@ -11,9 +11,10 @@ interface BookingSummaryProps {
   selectedDate: Date;
   selectedTime: Date;
   onConfirm: () => void;
+  disabled?: boolean;
 }
 
-export default function BookingSummary({ selectedDate, selectedTime, onConfirm }: BookingSummaryProps) {
+export default function BookingSummary({ selectedDate, selectedTime, onConfirm, disabled = false }: BookingSummaryProps) {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   
@@ -70,7 +71,7 @@ export default function BookingSummary({ selectedDate, selectedTime, onConfirm }
           <Button 
             className="w-full"
             onClick={handleConfirmBooking}
-            disabled={createAppointmentMutation.isPending}
+            disabled={createAppointmentMutation.isPending || disabled}
           >
             {createAppointmentMutation.isPending ? (
               "Processing..."

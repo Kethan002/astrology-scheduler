@@ -41,6 +41,16 @@ export function isValidTimeSlot(date: Date): boolean {
   return (isMorningSlot || isAfternoonSlot) && isValidInterval && isValidDay;
 }
 
+// Check if current time is within the Sunday 8-9 AM booking window
+export function isWithinBookingWindow(): boolean {
+  const now = new Date();
+  const currentDay = now.getDay();
+  const currentHour = now.getHours();
+  
+  // Booking is only allowed on Sundays (0) between 8-9 AM
+  return currentDay === 0 && (currentHour >= 8 && currentHour < 9);
+}
+
 export function getTimeSlots(date: Date): Date[] {
   const slots: Date[] = [];
   
