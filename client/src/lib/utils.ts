@@ -41,13 +41,16 @@ export function isValidTimeSlot(date: Date): boolean {
   return (isMorningSlot || isAfternoonSlot) && isValidInterval && isValidDay;
 }
 
-// Check if current time is within the Sunday 8-9 AM booking window
+// Check if current time is within the booking window
+// Note: This function is now just a fallback. We use the useBookingConfig hook instead
+// in components to get the dynamic booking window settings
 export function isWithinBookingWindow(): boolean {
   const now = new Date();
   const currentDay = now.getDay();
   const currentHour = now.getHours();
   
-  // Booking is only allowed on Sundays (0) between 8-9 AM
+  // Default booking window is Sunday (0) between 8-9 AM
+  // This is only used as a fallback when the booking configurations aren't loaded yet
   return currentDay === 0 && (currentHour >= 8 && currentHour < 9);
 }
 

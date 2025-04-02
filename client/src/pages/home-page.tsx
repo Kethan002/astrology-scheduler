@@ -12,6 +12,7 @@ import { InfoIcon, AlertCircle, Clock } from "lucide-react";
 import { useLocation } from "wouter";
 import { isWithinBookingWindow } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
+import { useBookingConfig } from "@/hooks/use-booking-config";
 
 type Tab = "book" | "appointments" | "profile";
 
@@ -33,11 +34,15 @@ export default function HomePage() {
     }
   }, []);
 
+  // Use the booking configuration hook
+  const bookingConfig = useBookingConfig();
+  
   // Check if current time is within booking window
   useEffect(() => {
     const checkBookingWindow = () => {
       const isAdmin = user?.isAdmin || false;
-      const withinWindow = isWithinBookingWindow();
+      // Use the dynamic booking window configuration if available, otherwise fallback
+      const withinWindow = bookingConfig.isWithinBookingWindow();
       setCanBook(withinWindow || isAdmin);
     };
     
@@ -46,7 +51,7 @@ export default function HomePage() {
     // Check every minute
     const interval = setInterval(checkBookingWindow, 60000);
     return () => clearInterval(interval);
-  }, [user]);
+  }, [user, bookingConfig]);
 
   // Function to handle booking confirmation
   const handleConfirmBooking = () => {
@@ -87,7 +92,18 @@ export default function HomePage() {
                   <AlertCircle className="h-4 w-4 text-yellow-600" />
                   <AlertTitle className="text-yellow-700">Booking Window Closed</AlertTitle>
                   <AlertDescription className="text-sm text-gray-600">
-                    <p>Booking is only available on Sundays between 8 AM and 9 AM. You can browse available slots but cannot make a reservation at this time.</p>
+                    <p>
+                      Booking is only available on {
+                        bookingConfig.bookingWindowDay === 0 ? "Sundays" :
+                        bookingConfig.bookingWindowDay === 1 ? "Mondays" :
+                        bookingConfig.bookingWindowDay === 2 ? "Tuesdays" :
+                        bookingConfig.bookingWindowDay === 3 ? "Wednesdays" :
+                        bookingConfig.bookingWindowDay === 4 ? "Thursdays" :
+                        bookingConfig.bookingWindowDay === 5 ? "Fridays" :
+                        "Saturdays"
+                      } between {bookingConfig.bookingWindowStartHour} AM and {bookingConfig.bookingWindowEndHour} AM. 
+                      You can browse available slots but cannot make a reservation at this time.
+                    </p>
                   </AlertDescription>
                 </Alert>
               )}
@@ -100,16 +116,52 @@ export default function HomePage() {
                   <div className="space-y-1">
                     <p className="font-medium text-gray-700">English:</p>
                     <p>• You can book only one appointment per week</p>
-                    <p>• Booking window: Sunday from 8 AM to 9 AM</p>
-                    <p>• Appointments are available daily except Tuesdays and Saturdays</p>
-                    <p>• Time slots: 9 AM - 1 PM and 3 PM - 5 PM (15-minute intervals)</p>
+                    <p>• Booking window: {
+                      bookingConfig.bookingWindowDay === 0 ? "Sunday" :
+                      bookingConfig.bookingWindowDay === 1 ? "Monday" :
+                      bookingConfig.bookingWindowDay === 2 ? "Tuesday" :
+                      bookingConfig.bookingWindowDay === 3 ? "Wednesday" :
+                      bookingConfig.bookingWindowDay === 4 ? "Thursday" :
+                      bookingConfig.bookingWindowDay === 5 ? "Friday" :
+                      "Saturday"
+                    } from {bookingConfig.bookingWindowStartHour} AM to {bookingConfig.bookingWindowEndHour} AM</p>
+                    <p>• Appointments are not available on {
+                      bookingConfig.disabledDays.map((day) => {
+                        return day === 0 ? "Sunday" :
+                          day === 1 ? "Monday" :
+                          day === 2 ? "Tuesday" :
+                          day === 3 ? "Wednesday" :
+                          day === 4 ? "Thursday" :
+                          day === 5 ? "Friday" :
+                          "Saturday"
+                      }).join(" and ")
+                    }</p>
+                    <p>• Time slots: {bookingConfig.morningSlotStart} AM - {bookingConfig.morningSlotEnd > 12 ? (bookingConfig.morningSlotEnd - 12) + " PM" : bookingConfig.morningSlotEnd + " AM"} and {bookingConfig.afternoonSlotStart > 12 ? (bookingConfig.afternoonSlotStart - 12) + " PM" : bookingConfig.afternoonSlotStart + " AM"} - {bookingConfig.afternoonSlotEnd > 12 ? (bookingConfig.afternoonSlotEnd - 12) + " PM" : bookingConfig.afternoonSlotEnd + " AM"} (15-minute intervals)</p>
                   </div>
                   <div className="space-y-1 pt-2 border-t border-gray-200">
                     <p className="font-medium text-gray-700">తెలుగు:</p>
                     <p>• మీరు వారానికి ఒక అపాయింట్‌మెంట్ మాత్రమే బుక్ చేసుకోవచ్చు</p>
-                    <p>• బుకింగ్ విండో: ఆదివారం ఉదయం 8 గంటల నుండి 9 గంటల వరకు</p>
-                    <p>• మంగళవారం మరియు శనివారం తప్ప ప్రతి రోజూ అపాయింట్‌మెంట్‌లు అందుబాటులో ఉంటాయి</p>
-                    <p>• టైమ్ స్లాట్‌లు: ఉదయం 9 గంటల నుండి మధ్యాహ్నం 1 గంట వరకు మరియు మధ్యాహ్నం 3 గంటల నుండి సాయంత్రం 5 గంటల వరకు (15-నిమిషాల విరామాలు)</p>
+                    <p>• బుకింగ్ విండో: {
+                      bookingConfig.bookingWindowDay === 0 ? "ఆదివారం" :
+                      bookingConfig.bookingWindowDay === 1 ? "సోమవారం" :
+                      bookingConfig.bookingWindowDay === 2 ? "మంగళవారం" :
+                      bookingConfig.bookingWindowDay === 3 ? "బుధవారం" :
+                      bookingConfig.bookingWindowDay === 4 ? "గురువారం" :
+                      bookingConfig.bookingWindowDay === 5 ? "శుక్రవారం" :
+                      "శనివారం"
+                    } ఉదయం {bookingConfig.bookingWindowStartHour} గంటల నుండి {bookingConfig.bookingWindowEndHour} గంటల వరకు</p>
+                    <p>• అపాయింట్‌మెంట్‌లు {
+                      bookingConfig.disabledDays.map((day) => {
+                        return day === 0 ? "ఆదివారం" :
+                          day === 1 ? "సోమవారం" :
+                          day === 2 ? "మంగళవారం" :
+                          day === 3 ? "బుధవారం" :
+                          day === 4 ? "గురువారం" :
+                          day === 5 ? "శుక్రవారం" :
+                          "శనివారం"
+                      }).join(" మరియు ")
+                    } రోజుల్లో అందుబాటులో లేవు</p>
+                    <p>• టైమ్ స్లాట్‌లు: ఉదయం {bookingConfig.morningSlotStart} గంటల నుండి {bookingConfig.morningSlotEnd > 12 ? "మధ్యాహ్నం " + (bookingConfig.morningSlotEnd - 12) : "ఉదయం " + bookingConfig.morningSlotEnd} గంటల వరకు మరియు {bookingConfig.afternoonSlotStart > 12 ? "మధ్యాహ్నం " + (bookingConfig.afternoonSlotStart - 12) : "ఉదయం " + bookingConfig.afternoonSlotStart} గంటల నుండి {bookingConfig.afternoonSlotEnd > 12 ? "సాయంత్రం " + (bookingConfig.afternoonSlotEnd - 12) : "మధ్యాహ్నం " + bookingConfig.afternoonSlotEnd} గంటల వరకు (15-నిమిషాల విరామాలు)</p>
                   </div>
                 </AlertDescription>
               </Alert>

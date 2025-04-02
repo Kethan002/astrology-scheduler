@@ -62,6 +62,11 @@ export default function AuthPage() {
 
   // Redirect if user is already logged in
   if (user) {
+    // If user is admin, redirect to admin dashboard
+    if (user.isAdmin) {
+      return <Redirect to="/admin" />;
+    }
+    // Otherwise, redirect to home page
     return <Redirect to="/" />;
   }
 
