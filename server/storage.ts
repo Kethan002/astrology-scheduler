@@ -1,8 +1,14 @@
 import { users, type User, type InsertUser, appointments, type Appointment, type InsertAppointment, availableSlots, type AvailableSlot, type InsertAvailableSlot } from "@shared/schema";
 import session from "express-session";
 import createMemoryStore from "memorystore";
+import connectPg from "connect-pg-simple";
+import { db } from "./db";
+import { eq, and, gte, lte } from "drizzle-orm";
+import pg from "pg";
+const { Pool } = pg;
 
 const MemoryStore = createMemoryStore(session);
+const PostgresSessionStore = connectPg(session);
 
 export interface IStorage {
   getUser(id: number): Promise<User | undefined>;
@@ -25,7 +31,155 @@ export interface IStorage {
   updateAvailableSlot(id: number, slot: Partial<AvailableSlot>): Promise<AvailableSlot | undefined>;
   deleteAvailableSlot(id: number): Promise<boolean>;
   
-  sessionStore: any; // Using any to avoid session.SessionStore type issue
+  sessionStore: session.Store;
+}
+
+export class DatabaseStorage implements IStorage {
+  sessionStore: session.Store;
+
+  constructor() {
+    const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+    this.sessionStore = new PostgresSessionStore({
+      pool,
+      createTableIfMissing: true,
+    });
+  }
+
+  async getUser(id: number): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.id, id));
+    return user;
+  }
+
+  async getUserByUsername(username: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.username, username));
+    return user;
+  }
+
+  async createUser(insertUser: InsertUser): Promise<User> {
+    const [user] = await db
+      .insert(users)
+      .values({ ...insertUser, isAdmin: false })
+      .returning();
+    return user;
+  }
+  
+  async getAppointments(): Promise<Appointment[]> {
+    return await db.select().from(appointments);
+  }
+  
+  async getAppointmentsByUser(userId: number): Promise<Appointment[]> {
+    return await db.select().from(appointments).where(eq(appointments.userId, userId));
+  }
+  
+  async getAppointmentsByDate(date: Date): Promise<Appointment[]> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+    
+    return await db.select().from(appointments).where(
+      and(
+        gte(appointments.date, startOfDay),
+        lte(appointments.date, endOfDay)
+      )
+    );
+  }
+  
+  async getAppointmentsByDateRange(startDate: Date, endDate: Date): Promise<Appointment[]> {
+    return await db.select().from(appointments).where(
+      and(
+        gte(appointments.date, startDate),
+        lte(appointments.date, endDate)
+      )
+    );
+  }
+  
+  async getAppointment(id: number): Promise<Appointment | undefined> {
+    const [appointment] = await db.select().from(appointments).where(eq(appointments.id, id));
+    return appointment;
+  }
+  
+  async createAppointment(appointment: InsertAppointment): Promise<Appointment> {
+    const [newAppointment] = await db
+      .insert(appointments)
+      .values({ ...appointment, status: "confirmed" })
+      .returning();
+    return newAppointment;
+  }
+  
+  async updateAppointment(id: number, appointmentUpdate: Partial<Appointment>): Promise<Appointment | undefined> {
+    const [updatedAppointment] = await db
+      .update(appointments)
+      .set(appointmentUpdate)
+      .where(eq(appointments.id, id))
+      .returning();
+    return updatedAppointment;
+  }
+  
+  async deleteAppointment(id: number): Promise<boolean> {
+    const result = await db
+      .delete(appointments)
+      .where(eq(appointments.id, id))
+      .returning({ id: appointments.id });
+    return result.length > 0;
+  }
+  
+  async getAvailableSlots(): Promise<AvailableSlot[]> {
+    return await db.select().from(availableSlots);
+  }
+  
+  async getAvailableSlotsByDate(date: Date): Promise<AvailableSlot[]> {
+    const startOfDay = new Date(date);
+    startOfDay.setHours(0, 0, 0, 0);
+    
+    const endOfDay = new Date(date);
+    endOfDay.setHours(23, 59, 59, 999);
+    
+    return await db.select().from(availableSlots).where(
+      and(
+        gte(availableSlots.date, startOfDay),
+        lte(availableSlots.date, endOfDay)
+      )
+    );
+  }
+  
+  async getAvailableSlotsByDateRange(startDate: Date, endDate: Date): Promise<AvailableSlot[]> {
+    return await db.select().from(availableSlots).where(
+      and(
+        gte(availableSlots.date, startDate),
+        lte(availableSlots.date, endDate)
+      )
+    );
+  }
+  
+  async createAvailableSlot(slot: InsertAvailableSlot): Promise<AvailableSlot> {
+    const [newSlot] = await db
+      .insert(availableSlots)
+      .values({
+        ...slot,
+        isEnabled: slot.isEnabled === undefined ? true : slot.isEnabled
+      })
+      .returning();
+    return newSlot;
+  }
+  
+  async updateAvailableSlot(id: number, slotUpdate: Partial<AvailableSlot>): Promise<AvailableSlot | undefined> {
+    const [updatedSlot] = await db
+      .update(availableSlots)
+      .set(slotUpdate)
+      .where(eq(availableSlots.id, id))
+      .returning();
+    return updatedSlot;
+  }
+  
+  async deleteAvailableSlot(id: number): Promise<boolean> {
+    const result = await db
+      .delete(availableSlots)
+      .where(eq(availableSlots.id, id))
+      .returning({ id: availableSlots.id });
+    return result.length > 0;
+  }
 }
 
 export class MemStorage implements IStorage {
@@ -34,7 +188,7 @@ export class MemStorage implements IStorage {
   private availableSlots: Map<number, AvailableSlot>;
   
   currentId: { users: number; appointments: number; availableSlots: number };
-  sessionStore: any; // Using any type to fix LSP error
+  sessionStore: session.Store;
 
   constructor() {
     this.users = new Map();
@@ -211,4 +365,5 @@ export class MemStorage implements IStorage {
   }
 }
 
-export const storage = new MemStorage();
+// Switch from MemStorage to DatabaseStorage
+export const storage = new DatabaseStorage();
