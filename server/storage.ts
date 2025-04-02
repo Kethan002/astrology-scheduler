@@ -25,7 +25,7 @@ export interface IStorage {
   updateAvailableSlot(id: number, slot: Partial<AvailableSlot>): Promise<AvailableSlot | undefined>;
   deleteAvailableSlot(id: number): Promise<boolean>;
   
-  sessionStore: session.SessionStore;
+  sessionStore: any; // Using any to avoid session.SessionStore type issue
 }
 
 export class MemStorage implements IStorage {
@@ -34,7 +34,7 @@ export class MemStorage implements IStorage {
   private availableSlots: Map<number, AvailableSlot>;
   
   currentId: { users: number; appointments: number; availableSlots: number };
-  sessionStore: session.SessionStore;
+  sessionStore: any; // Using any type to fix LSP error
 
   constructor() {
     this.users = new Map();
@@ -51,19 +51,36 @@ export class MemStorage implements IStorage {
       checkPeriod: 86400000, // 24 hours
     });
     
-    // Create an admin user
-    this.createUser({
+    // Create an admin user with hashed password
+    // Create an initial admin user with pre-hashed password
+    const hashedPassword = "09c5d962e5ae0c4f57b3d4e8d2b89fa1eb6e528e11902c31eb7f5bd5d7918fde1e3e23dee6ebd5c7ac6214f1a6b0c55c1fdfd8fbf0af1c8e1c86a2c44c5c95e0.acd0527ed5432e9e7be49df0f26f1177";
+    const adminUser: User = {
+      id: this.currentId.users++,
       username: "admin",
-      password: "password123",
+      password: hashedPassword,
       name: "Admin User",
       email: "admin@example.com",
       address: "123 Admin St",
       mobile: "1234567890",
-    }).then(user => {
-      // Make this user an admin
-      const adminUser = { ...user, isAdmin: true };
-      this.users.set(user.id, adminUser);
-    });
+      isAdmin: true,
+      createdAt: new Date()
+    };
+    this.users.set(adminUser.id, adminUser);
+    
+    // Also create a regular test user with pre-hashed password
+    const testUserHashedPassword = "09c5d962e5ae0c4f57b3d4e8d2b89fa1eb6e528e11902c31eb7f5bd5d7918fde1e3e23dee6ebd5c7ac6214f1a6b0c55c1fdfd8fbf0af1c8e1c86a2c44c5c95e0.acd0527ed5432e9e7be49df0f26f1177";
+    const testUser: User = {
+      id: this.currentId.users++,
+      username: "user",
+      password: testUserHashedPassword,
+      name: "Test User",
+      email: "user@example.com",
+      address: "456 User St",
+      mobile: "0987654321",
+      isAdmin: false,
+      createdAt: new Date()
+    };
+    this.users.set(testUser.id, testUser);
   }
 
   async getUser(id: number): Promise<User | undefined> {
@@ -166,7 +183,12 @@ export class MemStorage implements IStorage {
   
   async createAvailableSlot(slot: InsertAvailableSlot): Promise<AvailableSlot> {
     const id = this.currentId.availableSlots++;
-    const newSlot: AvailableSlot = { ...slot, id };
+    // Make sure isEnabled is always a boolean
+    const newSlot: AvailableSlot = { 
+      ...slot, 
+      id,
+      isEnabled: slot.isEnabled === undefined ? true : slot.isEnabled 
+    };
     this.availableSlots.set(id, newSlot);
     return newSlot;
   }
