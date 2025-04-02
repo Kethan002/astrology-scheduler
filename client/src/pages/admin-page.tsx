@@ -3,6 +3,7 @@ import Header from "@/components/header";
 import Footer from "@/components/footer";
 import AppointmentTable from "@/components/admin/appointment-table";
 import SlotManagement from "@/components/admin/slot-management";
+import BookingConfigSettings from "@/components/admin/booking-config";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
@@ -12,7 +13,7 @@ type AdminTab = "appointments" | "slots" | "users" | "settings";
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<AdminTab>("appointments");
   
-  const { data: appointments, isLoading: isLoadingAppointments } = useQuery({
+  const { data: appointments = [], isLoading: isLoadingAppointments } = useQuery<any[]>({
     queryKey: ["/api/admin/appointments"],
   });
   
@@ -76,8 +77,12 @@ export default function AdminPage() {
               </TabsContent>
               
               <TabsContent value="settings" className="p-6">
-                <div className="text-center py-12 text-gray-500">
-                  Settings will be available in a future update.
+                <div className="mb-6">
+                  <h3 className="text-xl font-bold mb-4">Booking System Settings</h3>
+                  <p className="text-gray-600 mb-4">
+                    Configure booking windows, appointment slots, and other system settings.
+                  </p>
+                  <BookingConfigSettings />
                 </div>
               </TabsContent>
             </Tabs>

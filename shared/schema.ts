@@ -1,4 +1,4 @@
-import { pgTable, text, serial, integer, boolean, timestamp, unique } from "drizzle-orm/pg-core";
+import { pgTable, text, serial, integer, boolean, timestamp, unique, time } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
 import { z } from "zod";
 
@@ -58,6 +58,20 @@ export const insertAvailableSlotSchema = createInsertSchema(availableSlots).pick
   isEnabled: true,
 });
 
+export const bookingConfigurations = pgTable("booking_configurations", {
+  id: serial("id").primaryKey(),
+  key: text("key").notNull().unique(), // e.g. 'booking_window_day', 'booking_window_start', etc.
+  value: text("value").notNull(),
+  description: text("description").notNull(),
+  updatedAt: timestamp("updated_at").defaultNow().notNull(),
+});
+
+export const insertBookingConfigSchema = createInsertSchema(bookingConfigurations).pick({
+  key: true,
+  value: true,
+  description: true,
+});
+
 export type InsertUser = z.infer<typeof insertUserSchema>;
 export type LoginUser = z.infer<typeof loginUserSchema>;
 export type User = typeof users.$inferSelect;
@@ -65,3 +79,5 @@ export type Appointment = typeof appointments.$inferSelect;
 export type InsertAppointment = z.infer<typeof insertAppointmentSchema>;
 export type AvailableSlot = typeof availableSlots.$inferSelect;
 export type InsertAvailableSlot = z.infer<typeof insertAvailableSlotSchema>;
+export type BookingConfiguration = typeof bookingConfigurations.$inferSelect;
+export type InsertBookingConfiguration = z.infer<typeof insertBookingConfigSchema>;

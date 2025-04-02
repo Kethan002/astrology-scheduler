@@ -2,7 +2,7 @@ import type { Express, Request, Response } from "express";
 import { createServer, type Server } from "http";
 import { setupAuth, comparePasswords, hashPassword } from "./auth";
 import { storage } from "./storage";
-import { insertAppointmentSchema, insertAvailableSlotSchema, User } from "@shared/schema";
+import { insertAppointmentSchema, insertAvailableSlotSchema, insertBookingConfigSchema, User } from "@shared/schema";
 import { ZodError } from "zod";
 import { fromZodError } from "zod-validation-error";
 
@@ -55,17 +55,28 @@ export async function registerRoutes(app: Express): Promise<Server> {
         userId,
       });
 
-      // Check if current time is within the booking window (Sunday 8-9 AM)
+      // Get booking configurations
+      const bookingWindowDayConfig = await storage.getBookingConfigurationByKey('booking_window_day');
+      const bookingWindowStartHourConfig = await storage.getBookingConfigurationByKey('booking_window_start_hour');
+      const bookingWindowEndHourConfig = await storage.getBookingConfigurationByKey('booking_window_end_hour');
+      
+      // Default values if configurations don't exist
+      const bookingWindowDay = bookingWindowDayConfig ? parseInt(bookingWindowDayConfig.value) : 0; // Default: Sunday
+      const bookingWindowStartHour = bookingWindowStartHourConfig ? parseInt(bookingWindowStartHourConfig.value) : 8; // Default: 8 AM
+      const bookingWindowEndHour = bookingWindowEndHourConfig ? parseInt(bookingWindowEndHourConfig.value) : 9; // Default: 9 AM
+      
+      // Check if current time is within the booking window
       const now = new Date();
       const currentDay = now.getDay();
       const currentHour = now.getHours();
       
-      // Booking is only allowed on Sundays between 8-9 AM
-      const isBookingWindow = currentDay === 0 && (currentHour >= 8 && currentHour < 9);
+      const isBookingWindow = currentDay === bookingWindowDay && 
+                            (currentHour >= bookingWindowStartHour && currentHour < bookingWindowEndHour);
       
       if (!isBookingWindow && !req.user.isAdmin) {
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
         return res.status(400).json({ 
-          message: "Booking is only available on Sunday between 8 AM and 9 AM" 
+          message: `Booking is only available on ${dayNames[bookingWindowDay]} between ${bookingWindowStartHour} AM and ${bookingWindowEndHour} AM` 
         });
       }
 
@@ -86,22 +97,43 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(400).json({ message: "You can only book one appointment per week" });
       }
 
-      // Check if the date is a Tuesday or Saturday
+      // Get disabled days configuration
+      const disabledDaysConfig = await storage.getBookingConfigurationByKey('disabled_days');
+      // Default: Tuesday (2) and Saturday (6)
+      const disabledDays = disabledDaysConfig 
+        ? disabledDaysConfig.value.split(',').map(d => parseInt(d.trim())) 
+        : [2, 6];
+      
+      // Check if the date is on a disabled day
       const day = appointmentDate.getDay();
-      if (day === 2 || day === 6) { // 2 is Tuesday, 6 is Saturday
-        return res.status(400).json({ message: "Appointments are not available on Tuesdays and Saturdays" });
+      if (disabledDays.includes(day)) {
+        const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+        const disabledDayNames = disabledDays.map(d => dayNames[d]).join(' and ');
+        return res.status(400).json({ message: `Appointments are not available on ${disabledDayNames}` });
       }
 
-      // Check if the time is in the allowed slots (9 AM - 1 PM or 3 PM - 5 PM)
+      // Get time slot configurations
+      const morningStartConfig = await storage.getBookingConfigurationByKey('morning_slot_start');
+      const morningEndConfig = await storage.getBookingConfigurationByKey('morning_slot_end');
+      const afternoonStartConfig = await storage.getBookingConfigurationByKey('afternoon_slot_start');
+      const afternoonEndConfig = await storage.getBookingConfigurationByKey('afternoon_slot_end');
+      
+      // Default values if configurations don't exist
+      const morningStart = morningStartConfig ? parseInt(morningStartConfig.value) : 9; // Default: 9 AM
+      const morningEnd = morningEndConfig ? parseInt(morningEndConfig.value) : 13; // Default: 1 PM
+      const afternoonStart = afternoonStartConfig ? parseInt(afternoonStartConfig.value) : 15; // Default: 3 PM
+      const afternoonEnd = afternoonEndConfig ? parseInt(afternoonEndConfig.value) : 17; // Default: 5 PM
+      
+      // Check if the time is in the allowed slots
       const hours = appointmentDate.getHours();
       const minutes = appointmentDate.getMinutes();
       
-      const isMorningSlot = (hours >= 9 && hours < 13) && minutes % 15 === 0;
-      const isAfternoonSlot = (hours >= 15 && hours < 17) && minutes % 15 === 0;
+      const isMorningSlot = (hours >= morningStart && hours < morningEnd) && minutes % 15 === 0;
+      const isAfternoonSlot = (hours >= afternoonStart && hours < afternoonEnd) && minutes % 15 === 0;
       
       if (!isMorningSlot && !isAfternoonSlot) {
         return res.status(400).json({ 
-          message: "Appointments are only available from 9 AM - 1 PM and 3 PM - 5 PM in 15-minute intervals" 
+          message: `Appointments are only available from ${morningStart} AM - ${morningEnd > 12 ? (morningEnd-12) + ' PM' : morningEnd + ' AM'} and ${afternoonStart > 12 ? (afternoonStart-12) + ' PM' : afternoonStart + ' AM'} - ${afternoonEnd > 12 ? (afternoonEnd-12) + ' PM' : afternoonEnd + ' AM'} in 15-minute intervals` 
         });
       }
 
@@ -358,6 +390,86 @@ export async function registerRoutes(app: Express): Promise<Server> {
     } catch (error) {
       console.error("Error deleting user:", error);
       res.status(500).json({ message: "Failed to delete user account" });
+    }
+  });
+  
+  // Get all booking configurations
+  app.get("/api/booking-configurations", async (req, res) => {
+    try {
+      const configs = await storage.getBookingConfigurations();
+      res.json(configs);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch booking configurations" });
+    }
+  });
+  
+  // Get a booking configuration by key
+  app.get("/api/booking-configurations/:key", async (req, res) => {
+    try {
+      const key = req.params.key;
+      const config = await storage.getBookingConfigurationByKey(key);
+      
+      if (!config) {
+        return res.status(404).json({ message: "Configuration not found" });
+      }
+      
+      res.json(config);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch booking configuration" });
+    }
+  });
+  
+  // Create a new booking configuration (admin only)
+  app.post("/api/booking-configurations", isAdmin, async (req, res) => {
+    try {
+      const configData = insertBookingConfigSchema.parse(req.body);
+      
+      // Check if configuration with this key already exists
+      const existingConfig = await storage.getBookingConfigurationByKey(configData.key);
+      if (existingConfig) {
+        return res.status(400).json({ message: "Configuration with this key already exists" });
+      }
+      
+      const config = await storage.createBookingConfiguration(configData);
+      res.status(201).json(config);
+    } catch (error) {
+      if (error instanceof ZodError) {
+        res.status(400).json({ message: fromZodError(error).message });
+      } else {
+        res.status(500).json({ message: "Failed to create booking configuration" });
+      }
+    }
+  });
+  
+  // Update a booking configuration (admin only)
+  app.put("/api/booking-configurations/:id", isAdmin, async (req, res) => {
+    try {
+      const configId = parseInt(req.params.id);
+      const updatedConfig = await storage.updateBookingConfiguration(configId, req.body);
+      
+      if (!updatedConfig) {
+        return res.status(404).json({ message: "Configuration not found" });
+      }
+      
+      res.json(updatedConfig);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to update booking configuration" });
+    }
+  });
+  
+  // Delete a booking configuration (admin only)
+  app.delete("/api/booking-configurations/:id", isAdmin, async (req, res) => {
+    try {
+      const configId = parseInt(req.params.id);
+      const success = await storage.deleteBookingConfiguration(configId);
+      
+      if (!success) {
+        return res.status(404).json({ message: "Configuration not found" });
+      }
+      
+      res.sendStatus(204);
+    } catch (error) {
+      res.status(500).json({ message: "Failed to delete booking configuration" });
     }
   });
 

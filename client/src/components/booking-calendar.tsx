@@ -18,6 +18,7 @@ import {
 import { cn } from "@/lib/utils";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { useBookingConfig } from "@/hooks/use-booking-config";
 
 interface BookingCalendarProps {
   selectedDate: Date | null;
@@ -27,8 +28,11 @@ interface BookingCalendarProps {
 export default function BookingCalendar({ selectedDate, onSelectDate }: BookingCalendarProps) {
   const [currentMonth, setCurrentMonth] = useState(new Date());
   
+  // Use booking configuration hook for dynamic settings
+  const { isDisabledDay } = useBookingConfig();
+  
   // Fetch available slots from the API
-  const { data: availableSlots = [] } = useQuery({
+  const { data: availableSlots = [] } = useQuery<Array<{date: string, isEnabled: boolean}>>({
     queryKey: ["/api/available-slots"],
   });
   
@@ -43,9 +47,9 @@ export default function BookingCalendar({ selectedDate, onSelectDate }: BookingC
   };
   
   // Check if a date is available for booking
-  const isDateAvailable = (date: Date) => {
-    // Tuesday (2) and Saturday (6) are not available
-    if (getDay(date) === 2 || getDay(date) === 6) {
+  const isDateAvailable = (date: Date): boolean => {
+    // Check if the day is disabled according to configuration
+    if (isDisabledDay(date)) {
       return false;
     }
     
@@ -55,7 +59,7 @@ export default function BookingCalendar({ selectedDate, onSelectDate }: BookingC
     }
     
     // Check if there's an available slot for this date
-    return availableSlots.some((slot: any) => {
+    return availableSlots.some((slot: {date: string, isEnabled: boolean}) => {
       const slotDate = new Date(slot.date);
       return isSameDay(date, slotDate) && slot.isEnabled;
     });
@@ -74,7 +78,7 @@ export default function BookingCalendar({ selectedDate, onSelectDate }: BookingC
     });
     
     // Calculate days from previous month to fill first row
-    const prevMonthDays = [];
+    const prevMonthDays: Date[] = [];
     let prevMonthFillDays = getDay(monthStart);
     let prevDay = startDate;
     
@@ -85,7 +89,7 @@ export default function BookingCalendar({ selectedDate, onSelectDate }: BookingC
     
     // Calculate days from next month to fill last row
     const totalDaysShown = Math.ceil((prevMonthFillDays + monthDays.length) / 7) * 7;
-    const nextMonthDays = [];
+    const nextMonthDays: Date[] = [];
     let nextDay = addDays(monthEnd, 1);
     
     for (let i = 0; i < totalDaysShown - prevMonthFillDays - monthDays.length; i++) {
@@ -98,7 +102,7 @@ export default function BookingCalendar({ selectedDate, onSelectDate }: BookingC
     
     return (
       <div className="grid grid-cols-7 gap-1">
-        {calendarDays.map((day, index) => {
+        {calendarDays.map((day: Date, index: number) => {
           const isCurrentMonth = isSameMonth(day, currentMonth);
           const isToday = isSameDay(day, new Date());
           const isSelected = selectedDate && isSameDay(day, selectedDate);
@@ -158,7 +162,7 @@ export default function BookingCalendar({ selectedDate, onSelectDate }: BookingC
       
       {/* Days of the week */}
       <div className="grid grid-cols-7 mb-2">
-        {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day, index) => (
+        {["Su", "Mo", "Tu", "We", "Th", "Fr", "Sa"].map((day: string, index: number) => (
           <div key={index} className="text-center text-gray-500 text-sm py-2">{day}</div>
         ))}
       </div>

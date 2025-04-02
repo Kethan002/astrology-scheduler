@@ -1,4 +1,4 @@
-import { users, type User, type InsertUser, appointments, type Appointment, type InsertAppointment, availableSlots, type AvailableSlot, type InsertAvailableSlot } from "@shared/schema";
+import { users, type User, type InsertUser, appointments, type Appointment, type InsertAppointment, availableSlots, type AvailableSlot, type InsertAvailableSlot, bookingConfigurations, type BookingConfiguration, type InsertBookingConfiguration } from "@shared/schema";
 import session from "express-session";
 import createMemoryStore from "memorystore";
 import connectPg from "connect-pg-simple";
@@ -33,6 +33,12 @@ export interface IStorage {
   updateAvailableSlot(id: number, slot: Partial<AvailableSlot>): Promise<AvailableSlot | undefined>;
   deleteAvailableSlot(id: number): Promise<boolean>;
   
+  getBookingConfigurations(): Promise<BookingConfiguration[]>;
+  getBookingConfigurationByKey(key: string): Promise<BookingConfiguration | undefined>;
+  createBookingConfiguration(config: InsertBookingConfiguration): Promise<BookingConfiguration>;
+  updateBookingConfiguration(id: number, config: Partial<BookingConfiguration>): Promise<BookingConfiguration | undefined>;
+  deleteBookingConfiguration(id: number): Promise<boolean>;
+  
   sessionStore: session.Store;
 }
 
@@ -45,6 +51,38 @@ export class DatabaseStorage implements IStorage {
       pool,
       createTableIfMissing: true,
     });
+    
+    // Initialize default booking configurations if they don't exist
+    this.initDefaultBookingConfigurations();
+  }
+  
+  private async initDefaultBookingConfigurations() {
+    try {
+      // Define default booking configurations
+      const defaultConfigs = [
+        { key: 'booking_window_day', value: '0', description: 'Day of the week when bookings are allowed (0-6, where 0 is Sunday)' },
+        { key: 'booking_window_start_hour', value: '8', description: 'Start hour of the booking window (0-23)' },
+        { key: 'booking_window_end_hour', value: '9', description: 'End hour of the booking window (0-23)' },
+        { key: 'disabled_days', value: '2,6', description: 'Days when appointments are not available (comma-separated, 0-6, where 0 is Sunday)' },
+        { key: 'morning_slot_start', value: '9', description: 'Start hour for morning appointment slots (0-23)' },
+        { key: 'morning_slot_end', value: '13', description: 'End hour for morning appointment slots (0-23)' },
+        { key: 'afternoon_slot_start', value: '15', description: 'Start hour for afternoon appointment slots (0-23)' },
+        { key: 'afternoon_slot_end', value: '17', description: 'End hour for afternoon appointment slots (0-23)' }
+      ];
+      
+      // Check if any configurations exist
+      const existingConfigs = await this.getBookingConfigurations();
+      
+      if (existingConfigs.length === 0) {
+        // Insert all default configurations
+        for (const config of defaultConfigs) {
+          await this.createBookingConfiguration(config);
+        }
+        console.log('Initialized default booking configurations');
+      }
+    } catch (error) {
+      console.error('Error initializing default booking configurations:', error);
+    }
   }
 
   async getUser(id: number): Promise<User | undefined> {
@@ -199,38 +237,142 @@ export class DatabaseStorage implements IStorage {
       .returning({ id: availableSlots.id });
     return result.length > 0;
   }
+  
+  async getBookingConfigurations(): Promise<BookingConfiguration[]> {
+    return await db.select().from(bookingConfigurations);
+  }
+  
+  async getBookingConfigurationByKey(key: string): Promise<BookingConfiguration | undefined> {
+    const [config] = await db.select().from(bookingConfigurations).where(eq(bookingConfigurations.key, key));
+    return config;
+  }
+  
+  async createBookingConfiguration(config: InsertBookingConfiguration): Promise<BookingConfiguration> {
+    const [newConfig] = await db
+      .insert(bookingConfigurations)
+      .values(config)
+      .returning();
+    return newConfig;
+  }
+  
+  async updateBookingConfiguration(id: number, configUpdate: Partial<BookingConfiguration>): Promise<BookingConfiguration | undefined> {
+    const [updatedConfig] = await db
+      .update(bookingConfigurations)
+      .set({...configUpdate, updatedAt: new Date()})
+      .where(eq(bookingConfigurations.id, id))
+      .returning();
+    return updatedConfig;
+  }
+  
+  async deleteBookingConfiguration(id: number): Promise<boolean> {
+    const result = await db
+      .delete(bookingConfigurations)
+      .where(eq(bookingConfigurations.id, id))
+      .returning({ id: bookingConfigurations.id });
+    return result.length > 0;
+  }
 }
 
 export class MemStorage implements IStorage {
   private users: Map<number, User>;
   private appointments: Map<number, Appointment>;
   private availableSlots: Map<number, AvailableSlot>;
+  private bookingConfigurations: Map<number, BookingConfiguration>;
   
-  currentId: { users: number; appointments: number; availableSlots: number };
+  currentId: { users: number; appointments: number; availableSlots: number; bookingConfigurations: number };
   sessionStore: session.Store;
 
   constructor() {
     this.users = new Map();
     this.appointments = new Map();
     this.availableSlots = new Map();
+    this.bookingConfigurations = new Map();
     
     this.currentId = {
       users: 1,
       appointments: 1,
       availableSlots: 1,
+      bookingConfigurations: 1,
     };
     
     this.sessionStore = new MemoryStore({
       checkPeriod: 86400000, // 24 hours
     });
     
+    // Create default booking configurations
+    const bookingConfigs = [
+      {
+        id: this.currentId.bookingConfigurations++,
+        key: "booking_window_day",
+        value: "0", // Sunday
+        description: "Day of the week when bookings are allowed (0-6, where 0 is Sunday)",
+        updatedAt: new Date()
+      },
+      {
+        id: this.currentId.bookingConfigurations++,
+        key: "booking_window_start_hour",
+        value: "8", // 8 AM
+        description: "Start hour of the booking window (0-23)",
+        updatedAt: new Date()
+      },
+      {
+        id: this.currentId.bookingConfigurations++,
+        key: "booking_window_end_hour",
+        value: "9", // 9 AM
+        description: "End hour of the booking window (0-23)",
+        updatedAt: new Date()
+      },
+      {
+        id: this.currentId.bookingConfigurations++,
+        key: "disabled_days",
+        value: "2,6", // Tuesday and Saturday
+        description: "Days when appointments are not available (comma-separated, 0-6, where 0 is Sunday)",
+        updatedAt: new Date()
+      },
+      {
+        id: this.currentId.bookingConfigurations++,
+        key: "morning_slot_start",
+        value: "9", // 9 AM
+        description: "Start hour for morning appointment slots (0-23)",
+        updatedAt: new Date()
+      },
+      {
+        id: this.currentId.bookingConfigurations++,
+        key: "morning_slot_end",
+        value: "13", // 1 PM
+        description: "End hour for morning appointment slots (0-23)",
+        updatedAt: new Date()
+      },
+      {
+        id: this.currentId.bookingConfigurations++,
+        key: "afternoon_slot_start",
+        value: "15", // 3 PM
+        description: "Start hour for afternoon appointment slots (0-23)",
+        updatedAt: new Date()
+      },
+      {
+        id: this.currentId.bookingConfigurations++,
+        key: "afternoon_slot_end",
+        value: "17", // 5 PM
+        description: "End hour for afternoon appointment slots (0-23)",
+        updatedAt: new Date()
+      }
+    ];
+    
+    // Add each configuration to the map
+    bookingConfigs.forEach(config => {
+      this.bookingConfigurations.set(config.id, config);
+    });
+    
     // Create an admin user with hashed password
     // Create an initial admin user with pre-hashed password
     const hashedPassword = "09c5d962e5ae0c4f57b3d4e8d2b89fa1eb6e528e11902c31eb7f5bd5d7918fde1e3e23dee6ebd5c7ac6214f1a6b0c55c1fdfd8fbf0af1c8e1c86a2c44c5c95e0.acd0527ed5432e9e7be49df0f26f1177";
+    // Create admin user with specific password
+    const adminHashedPassword = "09c5d962e5ae0c4f57b3d4e8d2b89fa1eb6e528e11902c31eb7f5bd5d7918fde1e3e23dee6ebd5c7ac6214f1a6b0c55c1fdfd8fbf0af1c8e1c86a2c44c5c95e0.acd0527ed5432e9e7be49df0f26f1177"; // This is the hash for "omkaram@123"
     const adminUser: User = {
       id: this.currentId.users++,
       username: "admin",
-      password: hashedPassword,
+      password: adminHashedPassword,
       name: "Admin User",
       email: "admin@example.com",
       address: "123 Admin St",
@@ -398,6 +540,45 @@ export class MemStorage implements IStorage {
   
   async deleteAvailableSlot(id: number): Promise<boolean> {
     return this.availableSlots.delete(id);
+  }
+  
+  async getBookingConfigurations(): Promise<BookingConfiguration[]> {
+    return Array.from(this.bookingConfigurations.values());
+  }
+  
+  async getBookingConfigurationByKey(key: string): Promise<BookingConfiguration | undefined> {
+    return Array.from(this.bookingConfigurations.values()).find(
+      (config) => config.key === key
+    );
+  }
+  
+  async createBookingConfiguration(config: InsertBookingConfiguration): Promise<BookingConfiguration> {
+    const id = this.currentId.bookingConfigurations++;
+    const updatedAt = new Date();
+    const newConfig: BookingConfiguration = { ...config, id, updatedAt };
+    this.bookingConfigurations.set(id, newConfig);
+    return newConfig;
+  }
+  
+  async updateBookingConfiguration(id: number, configUpdate: Partial<BookingConfiguration>): Promise<BookingConfiguration | undefined> {
+    const config = this.bookingConfigurations.get(id);
+    
+    if (!config) {
+      return undefined;
+    }
+    
+    const updatedConfig: BookingConfiguration = { 
+      ...config, 
+      ...configUpdate,
+      updatedAt: new Date()
+    };
+    this.bookingConfigurations.set(id, updatedConfig);
+    
+    return updatedConfig;
+  }
+  
+  async deleteBookingConfiguration(id: number): Promise<boolean> {
+    return this.bookingConfigurations.delete(id);
   }
 }
 
