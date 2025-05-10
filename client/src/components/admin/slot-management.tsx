@@ -17,97 +17,225 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Checkbox } from "@/components/ui/checkbox";
-import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { useQuery, useMutation } from "@tanstack/react-query";
-import { apiRequest, queryClient } from "@/lib/queryClient";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { apiRequest } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { getTimeSlots, formatDate, formatTime } from "@/lib/utils";
-import { addDays, isSameDay, format, isValid, isAfter, setHours, setMinutes } from "date-fns";
-import { CalendarDays, Plus, Save, Clock, X } from "lucide-react";
+import { addDays, isSameDay, format } from "date-fns";
+import { CalendarDays, Plus, Save, Clock, X, Check } from "lucide-react";
+import { Badge } from "@/components/ui/badge";
 
 export default function SlotManagement() {
   const { toast } = useToast();
+  const queryClient = useQueryClient();
   const [selectedDate, setSelectedDate] = useState<Date | null>(new Date());
   const [selectedTab, setSelectedTab] = useState<string>("calendar");
   const [bulkEnabled, setBulkEnabled] = useState(true);
+  const [isPending, setIsPending] = useState<{[key: string]: boolean}>({});
   
-  // Get available slots from API
+  // Get available slots from API with optimized caching strategy
   const { data: availableSlots = [], isLoading } = useQuery({
     queryKey: ["/api/available-slots"],
+    queryFn: async () => {
+      const response = await fetch("/api/available-slots");
+      if (!response.ok) {
+        throw new Error("Failed to fetch available slots");
+      }
+      return response.json();
+    },
+    refetchInterval: 10000, // Reduced refetch frequency to 10 seconds
+    staleTime: 5000, // Data considered fresh for 5 seconds
   });
   
-  // Create a new available slot
+  // Create a new available slot with optimistic updates
   const createSlotMutation = useMutation({
     mutationFn: async ({ date, isEnabled }: { date: Date, isEnabled: boolean }) => {
-      const slotData = { 
-        date: date.toISOString(),
-        isEnabled 
-      };
-      await apiRequest("POST", "/api/available-slots", slotData);
+      try {
+        const slotData = {
+          date: date.toISOString(),
+          isEnabled,
+          duration: 15,
+          status: "available"
+        };
+        const response = await apiRequest("POST", "/api/available-slots", slotData);
+        
+        if (!response.ok) {
+          const errorData = await response.json();
+          throw new Error(errorData.message || "Failed to create slot");
+        }
+        return await response.json();
+      } catch (error) {
+        console.error("Create slot error:", error);
+        throw error;
+      }
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/available-slots"] });
-      toast({
-        title: "Slot Created",
-        description: "The appointment slot has been created successfully.",
+    onMutate: async (variables) => {
+      // Cancel any outgoing refetches to avoid overwriting our optimistic update
+      await queryClient.cancelQueries({ queryKey: ["/api/available-slots"] });
+      
+      // Snapshot the previous value
+      const previousSlots = queryClient.getQueryData(["/api/available-slots"]);
+      
+      // Optimistically update to the new value
+      queryClient.setQueryData(["/api/available-slots"], (old: any) => {
+        // Generate a temporary ID for the new slot
+        const tempId = `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+        const newSlot = {
+          id: tempId,
+          date: variables.date.toISOString(),
+          isEnabled: variables.isEnabled,
+          duration: 15,
+          status: "available"
+        };
+        return [...old, newSlot];
       });
+      
+      const slotKey = getSlotKey(variables.date);
+      setIsPending(prev => ({ ...prev, [slotKey]: true }));
+      
+      // Return a context object with the snapshot
+      return { previousSlots };
     },
-    onError: (error: Error) => {
+    onError: (err, variables, context) => {
+      // If the mutation fails, use the context we saved to roll back
+      if (context?.previousSlots) {
+        queryClient.setQueryData(["/api/available-slots"], context.previousSlots);
+      }
+      
+      const slotKey = getSlotKey(variables.date);
+      setIsPending(prev => ({ ...prev, [slotKey]: false }));
+      
       toast({
         title: "Creation Failed",
-        description: error.message,
+        description: err.message,
         variant: "destructive",
       });
     },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/available-slots"] });
+    },
+    onSettled: (data, error, variables) => {
+      const slotKey = getSlotKey(variables.date);
+      setIsPending(prev => ({ ...prev, [slotKey]: false }));
+    },
   });
   
-  // Update an existing available slot
+  // Update an existing available slot with optimistic updates
   const updateSlotMutation = useMutation({
     mutationFn: async ({ id, isEnabled }: { id: number, isEnabled: boolean }) => {
       await apiRequest("PUT", `/api/available-slots/${id}`, { isEnabled });
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/available-slots"] });
-      toast({
-        title: "Slot Updated",
-        description: "The appointment slot has been updated successfully.",
+    onMutate: async (variables) => {
+      // Cancel any outgoing refetches to avoid overwriting our optimistic update
+      await queryClient.cancelQueries({ queryKey: ["/api/available-slots"] });
+      
+      // Snapshot the previous value
+      const previousSlots = queryClient.getQueryData(["/api/available-slots"]);
+      
+      // Optimistically update to the new value
+      queryClient.setQueryData(["/api/available-slots"], (old: any) => {
+        return old.map((slot: any) => {
+          if (slot.id === variables.id) {
+            return { ...slot, isEnabled: variables.isEnabled };
+          }
+          return slot;
+        });
       });
+      
+      const date = getSlotDateById(variables.id);
+      if (date) {
+        const slotKey = getSlotKey(date);
+        setIsPending(prev => ({ ...prev, [slotKey]: true }));
+      }
+      
+      // Return a context object with the snapshot
+      return { previousSlots };
     },
-    onError: (error: Error) => {
+    onError: (err, variables, context) => {
+      // If the mutation fails, use the context we saved to roll back
+      if (context?.previousSlots) {
+        queryClient.setQueryData(["/api/available-slots"], context.previousSlots);
+      }
+      
+      const date = getSlotDateById(variables.id);
+      if (date) {
+        const slotKey = getSlotKey(date);
+        setIsPending(prev => ({ ...prev, [slotKey]: false }));
+      }
+      
       toast({
         title: "Update Failed",
-        description: error.message,
+        description: err.message,
         variant: "destructive",
       });
     },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/available-slots"] });
+    },
+    onSettled: (data, error, variables) => {
+      const date = getSlotDateById(variables.id);
+      if (date) {
+        const slotKey = getSlotKey(date);
+        setIsPending(prev => ({ ...prev, [slotKey]: false }));
+      }
+    },
   });
   
-  // Delete an available slot
+  // Delete an available slot with optimistic updates
   const deleteSlotMutation = useMutation({
     mutationFn: async (id: number) => {
       await apiRequest("DELETE", `/api/available-slots/${id}`);
     },
+    onMutate: async (id) => {
+      // Cancel any outgoing refetches to avoid overwriting our optimistic update
+      await queryClient.cancelQueries({ queryKey: ["/api/available-slots"] });
+      
+      // Snapshot the previous value
+      const previousSlots = queryClient.getQueryData(["/api/available-slots"]);
+      
+      // Optimistically update to the new value
+      queryClient.setQueryData(["/api/available-slots"], (old: any) => {
+        return old.filter((slot: any) => slot.id !== id);
+      });
+      
+      // Return a context object with the snapshot
+      return { previousSlots };
+    },
+    onError: (err, id, context) => {
+      // If the mutation fails, use the context we saved to roll back
+      if (context?.previousSlots) {
+        queryClient.setQueryData(["/api/available-slots"], context.previousSlots);
+      }
+      
+      toast({
+        title: "Deletion Failed",
+        description: err.message,
+        variant: "destructive",
+      });
+    },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/available-slots"] });
       toast({
         title: "Slot Deleted",
         description: "The appointment slot has been deleted successfully.",
-      });
-    },
-    onError: (error: Error) => {
-      toast({
-        title: "Deletion Failed",
-        description: error.message,
-        variant: "destructive",
       });
     },
   });
   
   // Get all time slots for a selected date
   const timeSlots = selectedDate ? getTimeSlots(selectedDate) : [];
+  
+  // Helper function to create a unique key for a slot based on its date/time
+  const getSlotKey = (date: Date) => {
+    return `${date.toDateString()}-${date.getHours()}-${date.getMinutes()}`;
+  };
+  
+  // Get slot date by ID
+  const getSlotDateById = (id: number | string) => {
+    const slot = availableSlots.find((s: any) => s.id === id);
+    return slot ? new Date(slot.date) : null;
+  };
   
   // Check if a slot exists and is enabled
   const isSlotEnabledAndExists = (date: Date) => {
@@ -143,12 +271,130 @@ export default function SlotManagement() {
     }
   };
   
+  // Batch update multiple slots with a single UI update
+  const batchUpdateSlots = (slots: Date[], isEnabled: boolean) => {
+    // Optimistically update all slots in the UI
+    const updatesMap = new Map();
+    const slotsToUpdate = [];
+    const slotsToCreate = [];
+    
+    // Prepare data for updates
+    slots.forEach(slot => {
+      const slotId = getSlotId(slot);
+      const slotKey = getSlotKey(slot);
+      
+      // Mark as pending in the UI
+      setIsPending(prev => ({ ...prev, [slotKey]: true }));
+      
+      if (slotId) {
+        // If slot exists, queue for update
+        slotsToUpdate.push({ id: slotId, isEnabled });
+        updatesMap.set(slotId, { date: slot, isEnabled });
+      } else if (isEnabled) {
+        // If slot doesn't exist and should be enabled, queue for creation
+        slotsToCreate.push(slot);
+      }
+    });
+    
+    // Optimistically apply all updates to the UI
+    if (slotsToUpdate.length > 0 || slotsToCreate.length > 0) {
+      // Take a snapshot of the current state
+      const previousSlots = queryClient.getQueryData(["/api/available-slots"]);
+      
+      // Apply optimistic updates
+      queryClient.setQueryData(["/api/available-slots"], (old: any = []) => {
+        // Process updates for existing slots
+        const updatedData = old.map((slot: any) => {
+          if (updatesMap.has(slot.id)) {
+            return { ...slot, isEnabled: updatesMap.get(slot.id).isEnabled };
+          }
+          return slot;
+        });
+        
+        // Add new slots if needed
+        const newSlots = slotsToCreate.map(date => ({
+          id: `temp-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+          date: date.toISOString(),
+          isEnabled: true,
+          duration: 15,
+          status: "available"
+        }));
+        
+        return [...updatedData, ...newSlots];
+      });
+      
+      // Process actual API updates in parallel batches
+      Promise.all([
+        // Update existing slots
+        ...slotsToUpdate.map(({ id, isEnabled }) => 
+          apiRequest("PUT", `/api/available-slots/${id}`, { isEnabled })
+            .catch(error => console.error("Error updating slot:", error))
+        ),
+        
+        // Create new slots
+        ...slotsToCreate.map(date => {
+          const slotData = {
+            date: date.toISOString(),
+            isEnabled: true,
+            duration: 15,
+            status: "available"
+          };
+          return apiRequest("POST", "/api/available-slots", slotData)
+            .catch(error => console.error("Error creating slot:", error));
+        })
+      ])
+      .then(() => {
+        // After all operations complete, refresh the data
+        queryClient.invalidateQueries({ queryKey: ["/api/available-slots"] });
+        
+        // Reset pending states
+        let newPendingState = { ...isPending };
+        slots.forEach(slot => {
+          const slotKey = getSlotKey(slot);
+          delete newPendingState[slotKey];
+        });
+        setIsPending(newPendingState);
+        
+        // Show success toast
+        toast({
+          title: isEnabled ? "Slots Enabled" : "Slots Disabled",
+          description: `${slots.length} slots have been ${isEnabled ? "enabled" : "disabled"}.`,
+        });
+      })
+      .catch(error => {
+        // On error, roll back to previous state
+        queryClient.setQueryData(["/api/available-slots"], previousSlots);
+        
+        // Reset pending states
+        let newPendingState = { ...isPending };
+        slots.forEach(slot => {
+          const slotKey = getSlotKey(slot);
+          delete newPendingState[slotKey];
+        });
+        setIsPending(newPendingState);
+        
+        toast({
+          title: "Operation Failed",
+          description: "There was an error updating slots. Please try again.",
+          variant: "destructive",
+        });
+      });
+    }
+  };
+  
   // Generate slots for next 7 days
   const generateSlotsForNextWeek = () => {
-    const now = new Date();
+    const now = new Date(); 
     const startDate = now;
+    const slotsToCreate = [];
     
-    // Generate slots for next 7 days
+    // Show toast at the beginning of the operation
+    toast({
+      title: "Generating Slots",
+      description: "Creating appointment slots for the next week...",
+    });
+    
+    // Build the list of slots to create
     for (let i = 0; i < 7; i++) {
       const currentDate = addDays(startDate, i);
       
@@ -162,11 +408,7 @@ export default function SlotManagement() {
         for (let minute = 0; minute < 60; minute += 15) {
           const slotDate = new Date(currentDate);
           slotDate.setHours(hour, minute, 0, 0);
-          
-          // Only create future slots
-          if (isAfter(slotDate, now)) {
-            createSlotMutation.mutate({ date: slotDate, isEnabled: bulkEnabled });
-          }
+          slotsToCreate.push(slotDate);
         }
       }
       
@@ -175,24 +417,32 @@ export default function SlotManagement() {
         for (let minute = 0; minute < 60; minute += 15) {
           const slotDate = new Date(currentDate);
           slotDate.setHours(hour, minute, 0, 0);
-          
-          // Only create future slots
-          if (isAfter(slotDate, now)) {
-            createSlotMutation.mutate({ date: slotDate, isEnabled: bulkEnabled });
-          }
+          slotsToCreate.push(slotDate);
         }
       }
     }
     
-    toast({
-      title: "Slots Generated",
-      description: `Appointment slots for the next week have been ${bulkEnabled ? 'enabled' : 'disabled'}.`,
-    });
+    // Create the slots with optimistic UI updates
+    batchUpdateSlots(slotsToCreate, bulkEnabled);
   };
   
   // Build a table of slots for the selected date
   const buildSlotsTable = () => {
     if (!selectedDate) return null;
+    
+    // Skip rendering if it's Tuesday (2) or Saturday (6)
+    const dayOfWeek = selectedDate.getDay();
+    if (dayOfWeek === 2 || dayOfWeek === 6) {
+      return (
+        <div className="flex items-center justify-center h-64 text-center text-gray-500 p-4">
+          <div>
+            <p className="font-medium text-lg mb-2">No slots available</p>
+            <p>Appointments are not scheduled on {dayOfWeek === 2 ? 'Tuesdays' : 'Saturdays'}.</p>
+            <p>Please select a different day.</p>
+          </div>
+        </div>
+      );
+    }
     
     // Separate slots into morning and afternoon
     const morningSlots = timeSlots.filter(slot => slot.getHours() < 13);
@@ -205,15 +455,25 @@ export default function SlotManagement() {
           <div className="grid grid-cols-4 gap-3">
             {morningSlots.map((slot, index) => {
               const isEnabled = isSlotEnabledAndExists(slot);
+              const slotKey = getSlotKey(slot);
+              const isButtonPending = isPending[slotKey];
+              
               return (
-                <div key={index} className="flex items-center space-x-2">
-                  <Switch
-                    id={`morning-slot-${index}`}
-                    checked={isEnabled}
-                    onCheckedChange={() => toggleSlot(slot)}
-                  />
-                  <Label htmlFor={`morning-slot-${index}`}>{formatTime(slot)}</Label>
-                </div>
+                <Button
+                  key={index}
+                  variant={isEnabled ? "default" : "outline"}
+                  size="sm"
+                  className={`justify-start px-3 ${isEnabled ? "bg-green-100 text-green-800 hover:bg-green-200" : "hover:border-gray-400"}`}
+                  disabled={isButtonPending}
+                  onClick={() => toggleSlot(slot)}
+                >
+                  {isButtonPending ? (
+                    <div className="h-4 w-4 rounded-full border-2 border-b-transparent border-green-800 animate-spin mr-2" />
+                  ) : isEnabled ? (
+                    <Check className="h-4 w-4 mr-2" />
+                  ) : null}
+                  {formatTime(slot)}
+                </Button>
               );
             })}
           </div>
@@ -224,15 +484,25 @@ export default function SlotManagement() {
           <div className="grid grid-cols-4 gap-3">
             {afternoonSlots.map((slot, index) => {
               const isEnabled = isSlotEnabledAndExists(slot);
+              const slotKey = getSlotKey(slot);
+              const isButtonPending = isPending[slotKey];
+              
               return (
-                <div key={index} className="flex items-center space-x-2">
-                  <Switch
-                    id={`afternoon-slot-${index}`}
-                    checked={isEnabled}
-                    onCheckedChange={() => toggleSlot(slot)}
-                  />
-                  <Label htmlFor={`afternoon-slot-${index}`}>{formatTime(slot)}</Label>
-                </div>
+                <Button
+                  key={index}
+                  variant={isEnabled ? "default" : "outline"}
+                  size="sm"
+                  className={`justify-start px-3 ${isEnabled ? "bg-green-100 text-green-800 hover:bg-green-200" : "hover:border-gray-400"}`}
+                  disabled={isButtonPending}
+                  onClick={() => toggleSlot(slot)}
+                >
+                  {isButtonPending ? (
+                    <div className="h-4 w-4 rounded-full border-2 border-b-transparent border-green-800 animate-spin mr-2" />
+                  ) : isEnabled ? (
+                    <Check className="h-4 w-4 mr-2" />
+                  ) : null}
+                  {formatTime(slot)}
+                </Button>
               );
             })}
           </div>
@@ -241,7 +511,7 @@ export default function SlotManagement() {
     );
   };
   
-  // List of all available slots
+  // List of all available slots with optimized rendering
   const buildSlotsList = () => {
     if (isLoading) {
       return <div className="text-center py-4">Loading slots...</div>;
@@ -269,11 +539,9 @@ export default function SlotManagement() {
                 <TableCell>{formatDate(slotDate)}</TableCell>
                 <TableCell>{formatTime(slotDate)}</TableCell>
                 <TableCell>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
-                    slot.isEnabled ? 'bg-green-100 text-green-800' : 'bg-red-100 text-red-800'
-                  }`}>
+                  <Badge variant={slot.isEnabled ? "success" : "outline"}>
                     {slot.isEnabled ? 'Enabled' : 'Disabled'}
-                  </span>
+                  </Badge>
                 </TableCell>
                 <TableCell className="text-right">
                   <Button
@@ -299,6 +567,18 @@ export default function SlotManagement() {
       </Table>
     );
   };
+  
+  // Toggle button for bulk actions
+  const ToggleButton = ({ checked, onChange }: { checked: boolean, onChange: (checked: boolean) => void }) => (
+    <Button
+      variant={checked ? "default" : "outline"}
+      className={checked ? "bg-green-100 text-green-800 hover:bg-green-200" : ""}
+      onClick={() => onChange(!checked)}
+    >
+      {checked ? <Check className="h-4 w-4 mr-2" /> : null}
+      {checked ? "Enabled" : "Disabled"}
+    </Button>
+  );
   
   return (
     <Tabs value={selectedTab} onValueChange={setSelectedTab}>
@@ -349,10 +629,43 @@ export default function SlotManagement() {
                 </div>
               )}
             </CardContent>
-            {selectedDate && (
+            {selectedDate && selectedDate.getDay() !== 2 && selectedDate.getDay() !== 6 && (
               <CardFooter className="flex justify-between">
-                <Button variant="outline">Reset</Button>
-                <Button>Save Changes</Button>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    // Get all enabled slots for this date
+                    const slotsToDisable = timeSlots.filter(slot => isSlotEnabledAndExists(slot));
+                    if (slotsToDisable.length) {
+                      // Apply optimistic bulk update
+                      batchUpdateSlots(slotsToDisable, false);
+                    } else {
+                      toast({
+                        title: "No Action Required",
+                        description: "There are no enabled slots to reset.",
+                      });
+                    }
+                  }}
+                >
+                  Reset
+                </Button>
+                <Button
+                  onClick={() => {
+                    // Get all slots that aren't enabled
+                    const slotsToEnable = timeSlots.filter(slot => !isSlotEnabledAndExists(slot));
+                    if (slotsToEnable.length) {
+                      // Apply optimistic bulk update
+                      batchUpdateSlots(slotsToEnable, true);
+                    } else {
+                      toast({
+                        title: "No Action Required",
+                        description: "All slots are already enabled.",
+                      });
+                    }
+                  }}
+                >
+                  Select All
+                </Button>
               </CardFooter>
             )}
           </Card>
@@ -385,18 +698,14 @@ export default function SlotManagement() {
             <div>
               <h3 className="text-lg font-medium mb-3">Default Status</h3>
               <div className="flex items-center space-x-2">
-                <Switch
-                  id="bulk-enabled"
+                <ToggleButton 
                   checked={bulkEnabled}
-                  onCheckedChange={setBulkEnabled}
+                  onChange={setBulkEnabled}
                 />
-                <Label htmlFor="bulk-enabled">
-                  {bulkEnabled ? "Enabled" : "Disabled"}
+                <Label className="ml-2">
+                  All created slots will be {bulkEnabled ? "enabled" : "disabled"} by default
                 </Label>
               </div>
-              <p className="text-sm text-gray-500 mt-2">
-                All created slots will be {bulkEnabled ? "enabled" : "disabled"} by default
-              </p>
             </div>
             
             <div>

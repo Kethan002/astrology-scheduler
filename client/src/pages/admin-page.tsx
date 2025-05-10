@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import Header from "@/components/header";
 import Footer from "@/components/footer";
 import AppointmentTable from "@/components/admin/appointment-table";
@@ -12,6 +12,19 @@ type AdminTab = "appointments" | "slots" | "users" | "settings";
 
 export default function AdminPage() {
   const [activeTab, setActiveTab] = useState<AdminTab>("appointments");
+
+  // Redirect from /admin to /admin?tab=appointments
+  useEffect(() => {
+    if (!window.location.search) {
+      window.history.replaceState({}, '', '/admin?tab=appointments');
+    } else {
+      const params = new URLSearchParams(window.location.search);
+      const tab = params.get('tab') as AdminTab;
+      if (tab && ['appointments', 'slots', 'users', 'settings'].includes(tab)) {
+        setActiveTab(tab);
+      }
+    }
+  }, []);
   
   const { data: appointments = [], isLoading: isLoadingAppointments } = useQuery<any[]>({
     queryKey: ["/api/admin/appointments"],

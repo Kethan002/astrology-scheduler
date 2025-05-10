@@ -32,9 +32,6 @@ export default function UserMenu() {
     window.location.href = "/?tab=profile&section=settings";
   };
   
-  const handleNavigateToHelp = () => {
-    window.location.href = "/?tab=profile&section=help";
-  };
   
   return (
     <DropdownMenu>
@@ -56,10 +53,7 @@ export default function UserMenu() {
           <Settings className="mr-2 h-4 w-4" />
           <span>Settings</span>
         </DropdownMenuItem>
-        <DropdownMenuItem className="cursor-pointer" onClick={handleNavigateToHelp}>
-          <HelpCircle className="mr-2 h-4 w-4" />
-          <span>Help</span>
-        </DropdownMenuItem>
+      
         <DropdownMenuSeparator />
         <DropdownMenuItem className="cursor-pointer text-red-500" onClick={handleLogout}>
           <LogOut className="mr-2 h-4 w-4" />

@@ -1,4 +1,8 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useEffect } from "react";
+
+// Create a custom event for config changes
+export const CONFIG_UPDATED_EVENT = "booking-config-updated";
 
 export interface BookingConfig {
   id: number;
@@ -9,10 +13,42 @@ export interface BookingConfig {
 }
 
 export function useBookingConfig() {
+  const queryClient = useQueryClient();
+  
+  // Set up query with reasonable caching
   const { data: configs = [], isLoading, error } = useQuery<BookingConfig[]>({
     queryKey: ["/api/booking-configurations"],
-    staleTime: 1000 * 60, // 1 minute
+    staleTime: 60000, // Data stays fresh for 1 minute
+    gcTime: 300000,  // Keep unused data in cache for 5 minutes
+    refetchInterval: false, // Don't automatically refetch
+    refetchOnWindowFocus: false, // Don't refetch on window focus
+    refetchOnMount: true,  // Only fetch on first mount
+    refetchOnReconnect: true, // Refetch when reconnecting
   });
+  
+  // Set up event listener for config updates
+  useEffect(() => {
+    const handleConfigUpdate = () => {
+      console.log("Config update received in hook");
+      // Force immediate invalidation and refetch
+      queryClient.invalidateQueries({ 
+        queryKey: ["/api/booking-configurations"],
+        exact: true 
+      });
+      
+      // Force immediate refetch
+      queryClient.refetchQueries({
+        queryKey: ["/api/booking-configurations"],
+        exact: true
+      });
+    };
+  
+    window.addEventListener(CONFIG_UPDATED_EVENT, handleConfigUpdate);
+    
+    return () => {
+      window.removeEventListener(CONFIG_UPDATED_EVENT, handleConfigUpdate);
+    };
+  }, [queryClient]);
   
   // Helper function to get configuration value by key
   const getConfig = (key: string, defaultValue: string): string => {

@@ -21,24 +21,85 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { useState } from "react";
-import { CalendarDays, MapPin, Clock, AlertCircle, FileText, Calendar } from "lucide-react";
+import { useState, useEffect } from "react";
 import { useLocation } from "wouter";
+
+import { 
+  CalendarDays, 
+  MapPin, 
+  Clock, 
+  AlertCircle, 
+  FileText, 
+  Calendar,
+  Ban
+} from "lucide-react";
 
 export default function MyAppointments() {
   const { toast } = useToast();
   const [, navigate] = useLocation();
   const [appointmentToCancel, setAppointmentToCancel] = useState<number | null>(null);
+
+  const { data: user } = useQuery({
+    queryKey: ["/api/user"],
+    refetchInterval: 5000, // refetch every 5 seconds
+    refetchIntervalInBackground: true, // even when tab is inactive
+  });
+  
   
   // Fetch user's appointments
-  const { data: appointments = [], isLoading } = useQuery({
+  const { data: originalAppointments = [], isLoading } = useQuery({
     queryKey: ["/api/appointments"],
+    staleTime: 0,
+    refetchOnWindowFocus: true,
+    refetchOnMount: true,
   });
+  
+  // Process appointments to automatically mark appointments as processing or completed
+  const [appointments, setAppointments] = useState([]);
+  
+  useEffect(() => {
+    if (originalAppointments.length > 0) {
+      const currentDate = new Date();
+      
+      const processedAppointments = originalAppointments.map((appointment) => {
+        const updatedAppointment = { ...appointment };
+        const appointmentDate = new Date(updatedAppointment.date);
+        const appointmentDayEnd = new Date(appointmentDate);
+        appointmentDayEnd.setHours(19, 0, 0, 0); // 7 PM
+  
+        // If appointment is confirmed and current time is past 7 PM on appointment day
+        if (updatedAppointment.status === "confirmed" && currentDate > appointmentDayEnd) {
+          updatedAppointment.status = "completed";
+          updateAppointmentStatus(updatedAppointment.id, "completed");
+        }
+        // If appointment is confirmed and current time is past appointment start time but before 7 PM
+        else if (updatedAppointment.status === "confirmed" && currentDate >= appointmentDate && currentDate < appointmentDayEnd) {
+          updatedAppointment.status = "processing";
+          updateAppointmentStatus(updatedAppointment.id, "processing");
+        }
+        
+        return updatedAppointment;
+      });
+      
+      setAppointments(processedAppointments);
+    }
+  }, [originalAppointments]);
+  
+  // Update appointment status in the backend
+  const updateAppointmentStatus = async (id, status) => {
+    try {
+      await apiRequest("PATCH", `/api/appointments/${id}`, { status });
+      // Silently update without notifications to avoid spamming the user
+      queryClient.invalidateQueries({ queryKey: ["/api/appointments"] });
+    } catch (error) {
+      console.error("Failed to update appointment status:", error);
+    }
+  };
   
   // Cancel appointment mutation
   const cancelAppointmentMutation = useMutation({
     mutationFn: async (id: number) => {
-      await apiRequest("PUT", `/api/appointments/${id}`, { status: "cancelled" });
+      await apiRequest("DELETE", `/api/appointments/${id}`);
     },
     onSuccess: () => {
       toast({
@@ -69,14 +130,36 @@ export default function MyAppointments() {
     }
   };
   
-  // View appointment details
-  const viewAppointment = (id: number) => {
-    navigate(`/confirmation?id=${id}`);
-  };
-  
   // Group appointments by status
   const upcomingAppointments = appointments.filter((app: any) => app.status === "confirmed");
+  const currentAppointments = appointments.filter((app: any) => app.status === "processing");
   const pastAppointments = appointments.filter((app: any) => ["completed", "cancelled"].includes(app.status));
+
+  if (user?.blockedUntil && new Date(user.blockedUntil) > new Date()) {
+    return (
+      <div className="max-w-4xl mx-auto text-center py-12">
+        <Ban className="h-16 w-16 text-red-500 mx-auto mb-4" />
+        <h2 className="text-2xl font-bold mb-4">
+          Account Blocked / ఖాతా నిరోధించబడింది
+        </h2>
+        <p className="text-gray-600 mb-4">
+          Your account has been blocked until next month due to missed appointment. 
+          Please contact support for resolution. 
+          <br></br>హాజరు కాకపోవడం వలన మీ ఖాతా తదుపరి నెల వరకు నిరోధించబడింది. పరిష్కారం కోసం సపోర్ట్‌ని సంప్రదించండి.
+        </p>
+        <Button
+          onClick={() => {
+            const message = `Hello, my account has been blocked. I apologize for not attending the session at the scheduled time. Kindly guide me on how to resolve this.\n\nనమస్తే, నా ఖాతా నిరోధించబడింది. నేను నిర్ణయించిన సమయంలో హాజరు కాలేకపోయినందుకు క్షమించండి. దయచేసి సమస్య పరిష్కరించడానికి నాకు సహాయం చేయండి.`;
+            const encodedMessage = encodeURIComponent(message);
+            const whatsappLink = `https://wa.me/919494276797?text=${encodedMessage}`;
+            window.open(whatsappLink, "_blank");
+          }}
+        >
+          Contact Support / సపోర్ట్‌ని సంప్రదించండి
+        </Button>
+      </div>
+    );
+  }
   
   if (isLoading) {
     return (
@@ -106,7 +189,7 @@ export default function MyAppointments() {
             <p className="text-gray-500 mb-6 text-center max-w-md">
               You don't have any appointments scheduled. Book your first astrology consultation now!
             </p>
-            <Button onClick={() => navigate("/")}>
+            <Button onClick={() => window.location.href = "/"}>
               Book an Appointment
             </Button>
           </CardContent>
@@ -114,7 +197,7 @@ export default function MyAppointments() {
       </div>
     );
   }
-  
+
   return (
     <div className="max-w-4xl mx-auto">
       <h2 className="font-heading text-2xl font-bold text-gray-800 mb-6">My Appointments</h2>
@@ -140,7 +223,7 @@ export default function MyAppointments() {
                       <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
                         <div>
                           <h4 className="text-lg font-medium">Astrology Consultation</h4>
-                          <p className="text-gray-500">15 minutes with Dr. Stella Cosmos</p>
+                          <p className="text-gray-500"></p>
                         </div>
                         <div className="mt-2 sm:mt-0">
                           <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
@@ -175,20 +258,20 @@ export default function MyAppointments() {
                           <MapPin className="h-5 w-5 mr-3 text-gray-400 mt-0.5" />
                           <div>
                             <p className="text-sm font-medium text-gray-700">Location</p>
-                            <p className="text-gray-600">Astro Consultation Center</p>
+                            <a 
+                              href="https://maps.app.goo.gl/o59eNF8yui2m4jcm8" 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              Get Directions
+                            </a>
                           </div>
                         </div>
                       </div>
                     </div>
                     
                     <div className="border-t border-gray-200 px-4 sm:px-6 py-3 bg-gray-50 flex flex-wrap gap-3 justify-end">
-                      <Button 
-                        variant="outline" 
-                        size="sm"
-                        onClick={() => viewAppointment(appointment.id)}
-                      >
-                        View Details
-                      </Button>
                       <Button 
                         variant="destructive" 
                         size="sm"
@@ -210,6 +293,82 @@ export default function MyAppointments() {
           </Card>
         )}
       </div>
+      
+      {/* In Progress appointments */}
+      {currentAppointments.length > 0 && (
+        <div className="mb-8">
+          <h3 className="text-lg font-medium mb-4 flex items-center text-gray-700">
+            <Clock className="h-5 w-5 mr-2 text-amber-500" />
+            In Progress Appointments
+          </h3>
+          
+          <div className="grid gap-4">
+            {currentAppointments.map((appointment: any) => {
+              const appointmentDate = new Date(appointment.date);
+              const endTime = new Date(appointment.endTime);
+              
+              return (
+                <Card key={appointment.id} className="overflow-hidden">
+                  <div className="bg-gradient-to-r from-amber-300 to-amber-500 py-1"></div>
+                  <CardContent className="p-0">
+                    <div className="p-4 sm:p-6">
+                      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-4">
+                        <div>
+                          <h4 className="text-lg font-medium">Astrology Consultation</h4>
+                          <p className="text-gray-500"></p>
+                        </div>
+                        <div className="mt-2 sm:mt-0">
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                            In Progress
+                          </span>
+                        </div>
+                      </div>
+                      
+                      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                        <div className="flex items-start">
+                          <CalendarDays className="h-5 w-5 mr-3 text-gray-400 mt-0.5" />
+                          <div>
+                            <p className="text-sm font-medium text-gray-700">Date</p>
+                            <p className="text-gray-600">{formatDate(appointmentDate)}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start">
+                          <Clock className="h-5 w-5 mr-3 text-gray-400 mt-0.5" />
+                          <div>
+                            <p className="text-sm font-medium text-gray-700">Time</p>
+                            <p className="text-gray-600">{formatTime(appointmentDate)} - {formatTime(endTime)}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start">
+                          <FileText className="h-5 w-5 mr-3 text-gray-400 mt-0.5" />
+                          <div>
+                            <p className="text-sm font-medium text-gray-700">Appointment ID</p>
+                            <p className="text-gray-600">#{`AST-${appointmentDate.toISOString().slice(0, 10).replace(/-/g, '')}-${appointmentDate.getHours()}${appointmentDate.getMinutes() || '00'}`}</p>
+                          </div>
+                        </div>
+                        <div className="flex items-start">
+                          <MapPin className="h-5 w-5 mr-3 text-gray-400 mt-0.5" />
+                          <div>
+                            <p className="text-sm font-medium text-gray-700">Location</p>
+                            <a 
+                              href="https://maps.app.goo.gl/o59eNF8yui2m4jcm8" 
+                              target="_blank" 
+                              rel="noopener noreferrer"
+                              className="text-blue-600 hover:text-blue-800 hover:underline"
+                            >
+                              Get Directions
+                            </a>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </CardContent>
+                </Card>
+              );
+            })}
+          </div>
+        </div>
+      )}
       
       {/* Past appointments */}
       {pastAppointments.length > 0 && (
@@ -261,7 +420,7 @@ export default function MyAppointments() {
                     
                     {isCompleted && (
                       <div className="mt-4 pt-4 border-t border-gray-200 flex justify-end">
-                        <Button variant="outline" size="sm">Book Again</Button>
+                        <Button variant="outline" size="sm" onClick={() => window.location.href = "/"}>Book Again</Button>
                       </div>
                     )}
                   </CardContent>

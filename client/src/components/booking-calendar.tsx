@@ -32,8 +32,33 @@ export default function BookingCalendar({ selectedDate, onSelectDate }: BookingC
   const { isDisabledDay } = useBookingConfig();
   
   // Fetch available slots from the API
-  const { data: availableSlots = [] } = useQuery<Array<{date: string, isEnabled: boolean}>>({
+  const { data: availableSlots = [], isLoading: isLoadingSlots } = useQuery<Array<{date: string, isEnabled: boolean}>>({
     queryKey: ["/api/available-slots"],
+    queryFn: async () => {
+      const response = await fetch("/api/available-slots");
+      if (!response.ok) {
+        throw new Error("Failed to fetch available slots");
+      }
+      return response.json();
+    },
+    refetchInterval: 5000, // Refetch every 5 seconds
+    refetchIntervalInBackground: true, // Continue refetching even when tab is not active
+    staleTime: 0, // Consider data stale immediately
+  });
+  
+  // Fetch available dates from the API
+  const { data: availableDates = [], isLoading: isLoadingDates } = useQuery({
+    queryKey: ["/api/available-dates"],
+    queryFn: async () => {
+      const response = await apiRequest("GET", "/api/available-dates");
+      if (!response.ok) {
+        throw new Error("Failed to fetch available dates");
+      }
+      return response.json();
+    },
+    refetchInterval: 30000, // Refetch every 30 seconds
+    refetchIntervalInBackground: true, // Continue refetching even when tab is not active
+    staleTime: 0, // Consider data stale immediately
   });
   
   // Go to previous month
@@ -53,16 +78,20 @@ export default function BookingCalendar({ selectedDate, onSelectDate }: BookingC
       return false;
     }
     
-    // Only future dates are available
-    if (isBefore(date, new Date())) {
+    // Only past dates (before today) are unavailable
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (isBefore(date, today)) {
       return false;
     }
     
     // Check if there's an available slot for this date
-    return availableSlots.some((slot: {date: string, isEnabled: boolean}) => {
+    const hasAvailableSlot = availableSlots.some((slot: {date: string, isEnabled: boolean}) => {
       const slotDate = new Date(slot.date);
       return isSameDay(date, slotDate) && slot.isEnabled;
     });
+    
+    return hasAvailableSlot;
   };
   
   // Generate calendar days

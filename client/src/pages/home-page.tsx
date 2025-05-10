@@ -12,17 +12,22 @@ import { InfoIcon, AlertCircle, Clock } from "lucide-react";
 import { useLocation } from "wouter";
 import { isWithinBookingWindow } from "@/lib/utils";
 import { useAuth } from "@/hooks/use-auth";
-import { useBookingConfig } from "@/hooks/use-booking-config";
+import { useBookingConfig, CONFIG_UPDATED_EVENT } from "@/hooks/use-booking-config";
+import { useQueryClient } from "@tanstack/react-query";
 
 type Tab = "book" | "appointments" | "profile";
 
 export default function HomePage() {
+  const [configVersion, setConfigVersion] = useState(0);
   const [activeTab, setActiveTab] = useState<Tab>("book");
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState<Date | null>(null);
   const [canBook, setCanBook] = useState<boolean>(false);
   const [, navigate] = useLocation();
   const { user } = useAuth();
+  const queryClient = useQueryClient();
+
+  
   
   // Get tab and section from URL params
   useEffect(() => {
@@ -38,20 +43,42 @@ export default function HomePage() {
   const bookingConfig = useBookingConfig();
   
   // Check if current time is within booking window
+  const checkBookingWindow = () => {
+    const isAdmin = user?.isAdmin || false;
+    // Use the dynamic booking window configuration
+    const withinWindow = bookingConfig.isWithinBookingWindow();
+    setCanBook(withinWindow || isAdmin);
+  };
+  
+  // Set up initial check and interval
   useEffect(() => {
-    const checkBookingWindow = () => {
-      const isAdmin = user?.isAdmin || false;
-      // Use the dynamic booking window configuration if available, otherwise fallback
-      const withinWindow = bookingConfig.isWithinBookingWindow();
-      setCanBook(withinWindow || isAdmin);
-    };
-    
     checkBookingWindow();
     
     // Check every minute
-    const interval = setInterval(checkBookingWindow, 60000);
-    return () => clearInterval(interval);
-  }, [user, bookingConfig]);
+    const interval = setInterval(checkBookingWindow, 30000); // Reduce to 30 seconds
+    
+    // Listen for config updates
+    const handleConfigUpdate = () => {
+      console.log("Home page received config update");
+      // Force refetch
+      queryClient.invalidateQueries({ queryKey: ["/api/booking-configurations"] });
+      // Increment config version to force re-render
+      setConfigVersion(prev => prev + 1);
+      // Recheck booking window with a delay to ensure query completes
+      setTimeout(checkBookingWindow, 500);
+
+      // Recheck booking window immediately
+      checkBookingWindow();
+    };
+    
+    window.addEventListener(CONFIG_UPDATED_EVENT, handleConfigUpdate);
+    
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener(CONFIG_UPDATED_EVENT, handleConfigUpdate);
+    };
+  }, [user, bookingConfig, queryClient, configVersion]);
+  
 
   // Function to handle booking confirmation
   const handleConfirmBooking = () => {
@@ -60,6 +87,31 @@ export default function HomePage() {
       navigate("/confirmation");
     }
   };
+
+  // Helper function to properly format time in Telugu
+  const formatTo12HourTelugu = (hour: number) => {
+    // Convert 24-hour format to 12-hour format
+    const hour12 = hour % 12 || 12; // Convert 0 to 12 for 12 AM
+    
+    // Add appropriate Telugu time period suffix
+    if (hour < 12) {
+      return `ఉదయం ${hour12} గంటలు`; // Morning (AM)
+    } else if (hour >= 12 && hour < 16) {
+      return `మధ్యాహ్నం ${hour12} గంటలు`; // Afternoon (12-4 PM)
+    } else if (hour >= 16 && hour < 19) {
+      return `సాయంత్రం ${hour12} గంటలు`; // Evening (4-7 PM)
+    } else {
+      return `రాత్రి ${hour12} గంటలు`; // Night (7 PM onwards)
+    }
+  };
+
+  // Helper function to properly format time in English
+  const formatTo12Hour = (hour: number) => {
+    const period = hour >= 12 ? "PM" : "AM";
+    const displayHour = hour % 12 || 12; // Convert 0 to 12 for 12 AM
+    return `${displayHour} ${period}`;
+  };
+
 
   // Reset time when date changes
   const handleDateSelect = (date: Date) => {
@@ -90,9 +142,10 @@ export default function HomePage() {
               {!canBook && !user?.isAdmin && (
                 <Alert className="bg-yellow-50 border-l-4 border-yellow-600 mb-8">
                   <AlertCircle className="h-4 w-4 text-yellow-600" />
-                  <AlertTitle className="text-yellow-700">Booking Window Closed</AlertTitle>
+                  <AlertTitle className="text-yellow-700">Booking Window Closed / బుకింగ్ విండో మూసివేయబడింది</AlertTitle>
                   <AlertDescription className="text-sm text-gray-600">
-                    <p>
+                    <p className="mb-2">
+                      <span className="font-medium">English: </span>
                       Booking is only available on {
                         bookingConfig.bookingWindowDay === 0 ? "Sundays" :
                         bookingConfig.bookingWindowDay === 1 ? "Mondays" :
@@ -101,12 +154,26 @@ export default function HomePage() {
                         bookingConfig.bookingWindowDay === 4 ? "Thursdays" :
                         bookingConfig.bookingWindowDay === 5 ? "Fridays" :
                         "Saturdays"
-                      } between {bookingConfig.bookingWindowStartHour} AM and {bookingConfig.bookingWindowEndHour} AM. 
+                      } between {formatTo12Hour(bookingConfig.bookingWindowStartHour)} and {formatTo12Hour(bookingConfig.bookingWindowEndHour)}. 
                       You can browse available slots but cannot make a reservation at this time.
+                    </p>
+                    <p>
+                      <span className="font-medium">తెలుగు: </span>
+                      {
+                        bookingConfig.bookingWindowDay === 0 ? "ఆదివారాలు" :
+                        bookingConfig.bookingWindowDay === 1 ? "సోమవారాలు" :
+                        bookingConfig.bookingWindowDay === 2 ? "మంగళవారాలు" :
+                        bookingConfig.bookingWindowDay === 3 ? "బుధవారాలు" :
+                        bookingConfig.bookingWindowDay === 4 ? "గురువారాలు" :
+                        bookingConfig.bookingWindowDay === 5 ? "శుక్రవారాలు" :
+                        "శనివారాలు"
+                      } మాత్రమే {formatTo12HourTelugu(bookingConfig.bookingWindowStartHour)} నుండి {formatTo12HourTelugu(bookingConfig.bookingWindowEndHour)} వరకు బుకింగ్ అందుబాటులో ఉంటుంది.
+                      మీరు అందుబాటులో ఉన్న స్లాట్‌లను చూడవచ్చు, కానీ ఈ సమయంలో రిజర్వేషన్ చేయలేరు.
                     </p>
                   </AlertDescription>
                 </Alert>
               )}
+              
               
               {/* Booking instructions and rules */}
               <Alert className="bg-blue-50 border-l-4 border-blue-600 mb-8">
@@ -124,7 +191,7 @@ export default function HomePage() {
                       bookingConfig.bookingWindowDay === 4 ? "Thursday" :
                       bookingConfig.bookingWindowDay === 5 ? "Friday" :
                       "Saturday"
-                    } from {bookingConfig.bookingWindowStartHour} AM to {bookingConfig.bookingWindowEndHour} AM</p>
+                    } from {formatTo12Hour(bookingConfig.bookingWindowStartHour)} to {formatTo12Hour(bookingConfig.bookingWindowEndHour)}</p>
                     <p>• Appointments are not available on {
                       bookingConfig.disabledDays.map((day) => {
                         return day === 0 ? "Sunday" :
@@ -136,11 +203,12 @@ export default function HomePage() {
                           "Saturday"
                       }).join(" and ")
                     }</p>
-                    <p>• Time slots: {bookingConfig.morningSlotStart} AM - {bookingConfig.morningSlotEnd > 12 ? (bookingConfig.morningSlotEnd - 12) + " PM" : bookingConfig.morningSlotEnd + " AM"} and {bookingConfig.afternoonSlotStart > 12 ? (bookingConfig.afternoonSlotStart - 12) + " PM" : bookingConfig.afternoonSlotStart + " AM"} - {bookingConfig.afternoonSlotEnd > 12 ? (bookingConfig.afternoonSlotEnd - 12) + " PM" : bookingConfig.afternoonSlotEnd + " AM"} (15-minute intervals)</p>
+                    <p>• Time slots: {formatTo12Hour(bookingConfig.morningSlotStart)} - {formatTo12Hour(bookingConfig.morningSlotEnd)} and {formatTo12Hour(bookingConfig.afternoonSlotStart)} - {formatTo12Hour(bookingConfig.afternoonSlotEnd)}</p>
+                    <p><strong>• If you fail to attend your scheduled appointment, you will not be able to book a new appointment for the next one month.</strong> </p>
                   </div>
                   <div className="space-y-1 pt-2 border-t border-gray-200">
                     <p className="font-medium text-gray-700">తెలుగు:</p>
-                    <p>• మీరు వారానికి ఒక అపాయింట్‌మెంట్ మాత్రమే బుక్ చేసుకోవచ్చు</p>
+                    <p>• మీరు వారానికి ఒక అపాయింట్‌మెంట్ మాత్రమే బుక్ చేసుకోగలరు</p>
                     <p>• బుకింగ్ విండో: {
                       bookingConfig.bookingWindowDay === 0 ? "ఆదివారం" :
                       bookingConfig.bookingWindowDay === 1 ? "సోమవారం" :
@@ -149,8 +217,24 @@ export default function HomePage() {
                       bookingConfig.bookingWindowDay === 4 ? "గురువారం" :
                       bookingConfig.bookingWindowDay === 5 ? "శుక్రవారం" :
                       "శనివారం"
-                    } ఉదయం {bookingConfig.bookingWindowStartHour} గంటల నుండి {bookingConfig.bookingWindowEndHour} గంటల వరకు</p>
-                    <p>• అపాయింట్‌మెంట్‌లు {
+                    } {
+                      bookingConfig.bookingWindowStartHour < 12 ? 
+                        `ఉదయం ${bookingConfig.bookingWindowStartHour} గంటల` : 
+                      bookingConfig.bookingWindowStartHour >= 12 && bookingConfig.bookingWindowStartHour < 16 ? 
+                        `మధ్యాహ్నం ${bookingConfig.bookingWindowStartHour % 12 || 12} గంటల` : 
+                      bookingConfig.bookingWindowStartHour >= 16 && bookingConfig.bookingWindowStartHour < 19 ? 
+                        `సాయంత్రం ${bookingConfig.bookingWindowStartHour % 12 || 12} గంటల` : 
+                        `రాత్రి ${bookingConfig.bookingWindowStartHour % 12 || 12} గంటల`
+                    } నుండి {
+                      bookingConfig.bookingWindowEndHour < 12 ? 
+                        `ఉదయం ${bookingConfig.bookingWindowEndHour} గంటల` : 
+                      bookingConfig.bookingWindowEndHour >= 12 && bookingConfig.bookingWindowEndHour < 16 ? 
+                        `మధ్యాహ్నం ${bookingConfig.bookingWindowEndHour % 12 || 12} గంటల` : 
+                      bookingConfig.bookingWindowEndHour >= 16 && bookingConfig.bookingWindowEndHour < 19 ? 
+                        `సాయంత్రం ${bookingConfig.bookingWindowEndHour % 12 || 12} గంటల` : 
+                        `రాత్రి ${bookingConfig.bookingWindowEndHour % 12 || 12} గంటల`
+                    } వరకు</p>
+                    <p>• {
                       bookingConfig.disabledDays.map((day) => {
                         return day === 0 ? "ఆదివారం" :
                           day === 1 ? "సోమవారం" :
@@ -160,12 +244,34 @@ export default function HomePage() {
                           day === 5 ? "శుక్రవారం" :
                           "శనివారం"
                       }).join(" మరియు ")
-                    } రోజుల్లో అందుబాటులో లేవు</p>
-                    <p>• టైమ్ స్లాట్‌లు: ఉదయం {bookingConfig.morningSlotStart} గంటల నుండి {bookingConfig.morningSlotEnd > 12 ? "మధ్యాహ్నం " + (bookingConfig.morningSlotEnd - 12) : "ఉదయం " + bookingConfig.morningSlotEnd} గంటల వరకు మరియు {bookingConfig.afternoonSlotStart > 12 ? "మధ్యాహ్నం " + (bookingConfig.afternoonSlotStart - 12) : "ఉదయం " + bookingConfig.afternoonSlotStart} గంటల నుండి {bookingConfig.afternoonSlotEnd > 12 ? "సాయంత్రం " + (bookingConfig.afternoonSlotEnd - 12) : "మధ్యాహ్నం " + bookingConfig.afternoonSlotEnd} గంటల వరకు (15-నిమిషాల విరామాలు)</p>
+                    } అపాయింట్‌మెంట్‌లు అందుబాటులో లేవు</p>
+                    <p>• సమయ స్లాట్‌లు: {
+                      bookingConfig.morningSlotStart < 12 ? 
+                        `ఉదయం ${bookingConfig.morningSlotStart}` : 
+                        `మధ్యాహ్నం ${bookingConfig.morningSlotStart % 12 || 12}`
+                    } - {
+                      bookingConfig.morningSlotEnd < 12 ? 
+                        `ఉదయం ${bookingConfig.morningSlotEnd}` : 
+                        `మధ్యాహ్నం ${bookingConfig.morningSlotEnd % 12 || 12}`
+                    } మరియు {
+                      bookingConfig.afternoonSlotStart < 12 ? 
+                        `ఉదయం ${bookingConfig.afternoonSlotStart}` : 
+                      bookingConfig.afternoonSlotStart >= 12 && bookingConfig.afternoonSlotStart < 16 ? 
+                        `మధ్యాహ్నం ${bookingConfig.afternoonSlotStart % 12 || 12}` : 
+                        `సాయంత్రం ${bookingConfig.afternoonSlotStart % 12 || 12}`
+                    } - {
+                      bookingConfig.afternoonSlotEnd < 12 ? 
+                        `ఉదయం ${bookingConfig.afternoonSlotEnd}` : 
+                      bookingConfig.afternoonSlotEnd >= 12 && bookingConfig.afternoonSlotEnd < 16 ? 
+                        `మధ్యాహ్నం ${bookingConfig.afternoonSlotEnd % 12 || 12}` : 
+                      bookingConfig.afternoonSlotEnd >= 16 && bookingConfig.afternoonSlotEnd < 19 ? 
+                        `సాయంత్రం ${bookingConfig.afternoonSlotEnd % 12 || 12}` : 
+                        `రాత్రి ${bookingConfig.afternoonSlotEnd % 12 || 12}`
+                    }</p>
+                    <p><strong>•మీరు మీ అపాయింట్‌మెంట్ సమయానికి  హాజరు కాలేకపోతే, మీరు తదుపరి ఒక నెల పాటు కొత్త అపాయింట్‌మెంట్‌ను బుక్ చేసుకోలేరు.</strong></p>
                   </div>
                 </AlertDescription>
               </Alert>
-              
               {/* Booking calendar and time slots */}
               <div className="grid grid-cols-1 md:grid-cols-12 gap-8">
                 {/* Left column: Calendar and Summary */}

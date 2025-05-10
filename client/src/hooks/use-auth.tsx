@@ -1,4 +1,4 @@
-import { createContext, ReactNode, useContext } from "react";
+import { createContext, ReactNode, useContext, useEffect } from "react";
 import {
   useQuery,
   useMutation,
@@ -7,6 +7,8 @@ import {
 import { insertUserSchema, User as SelectUser, LoginUser } from "@shared/schema";
 import { getQueryFn, apiRequest, queryClient } from "../lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useQueryClient } from "@tanstack/react-query";
+
 
 type AuthContextType = {
   user: SelectUser | null;
@@ -21,7 +23,19 @@ import { z } from "zod";
 
 export const AuthContext = createContext<AuthContextType | null>(null);
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const { toast } = useToast();
+
+  const queryClient = useQueryClient();
+
+  useEffect(() => {
+    const channel = new BroadcastChannel("user-updates");
+    channel.onmessage = (event) => {
+      if (event.data === "refetch-user") {
+        queryClient.invalidateQueries({ queryKey: ["/api/user"] });
+      }
+    };
+    return () => channel.close();
+  }, [queryClient]);
+
   const {
     data: user,
     error,
@@ -29,6 +43,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   } = useQuery<SelectUser | undefined, Error>({
     queryKey: ["/api/user"],
     queryFn: getQueryFn({ on401: "returnNull" }),
+    refetchInterval: 5000,
+    refetchIntervalInBackground: true,
   });
 
   const loginMutation = useMutation({

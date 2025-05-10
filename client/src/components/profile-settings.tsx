@@ -90,7 +90,7 @@ export default function ProfileSettings() {
   
   // Set active section based on URL
   useEffect(() => {
-    if (sectionFromUrl && ['profile', 'settings', 'help', 'security'].includes(sectionFromUrl)) {
+    if (sectionFromUrl && ['profile', 'settings', 'security'].includes(sectionFromUrl)) {
       setActiveSection(sectionFromUrl);
     }
   }, [sectionFromUrl]);
@@ -249,17 +249,7 @@ export default function ProfileSettings() {
                 <Shield className="h-4 w-4 mr-2" />
                 Security
               </Button>
-              <Button 
-                variant={activeSection === "help" ? "secondary" : "ghost"} 
-                className="w-full justify-start text-left pl-4" 
-                onClick={() => {
-                  setActiveSection("help");
-                  window.location.href = "/?tab=profile&section=help";
-                }}
-              >
-                <HelpCircle className="h-4 w-4 mr-2" />
-                Help
-              </Button>
+
             </div>
           </CardContent>
         </Card>
@@ -478,63 +468,6 @@ export default function ProfileSettings() {
                   </div>
                 </TabsContent>
               </Tabs>
-            </CardContent>
-          </Card>
-        )}
-
-        {/* Help section */}
-        {activeSection === "help" && (
-          <Card>
-            <CardHeader>
-              <CardTitle>Help Center</CardTitle>
-              <CardDescription>
-                Find answers to common questions about using the appointment booking system
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="space-y-6">
-                <div>
-                  <h3 className="font-medium text-lg mb-2">Frequently Asked Questions</h3>
-                  <div className="space-y-4">
-                    <div>
-                      <h4 className="font-medium text-primary">When can I book appointments?</h4>
-                      <p className="text-sm text-gray-600 mt-1">
-                        Bookings are open every Sunday from 8 AM to 9 AM for the upcoming week.
-                      </p>
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-primary">How many appointments can I book?</h4>
-                      <p className="text-sm text-gray-600 mt-1">
-                        You can book one appointment per week.
-                      </p>
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-primary">Can I change my appointment time?</h4>
-                      <p className="text-sm text-gray-600 mt-1">
-                        Yes, you can cancel your current appointment and book a new one during the booking window.
-                      </p>
-                    </div>
-                    <div>
-                      <h4 className="font-medium text-primary">What languages are supported?</h4>
-                      <p className="text-sm text-gray-600 mt-1">
-                        Currently, the system supports English and Telugu languages.
-                      </p>
-                    </div>
-                  </div>
-                </div>
-                
-                <div>
-                  <h3 className="font-medium text-lg mb-2">Contact Support</h3>
-                  <p className="text-sm text-gray-600">
-                    Need additional help? Contact our support team:
-                  </p>
-                  <div className="mt-2">
-                    <p className="text-sm"><strong>Email:</strong> support@astroappointments.com</p>
-                    <p className="text-sm"><strong>Phone:</strong> +1 (555) 123-4567</p>
-                    <p className="text-sm"><strong>Hours:</strong> Monday-Friday, 9 AM - 5 PM</p>
-                  </div>
-                </div>
-              </div>
             </CardContent>
           </Card>
         )}

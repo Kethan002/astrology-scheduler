@@ -8,6 +8,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Loader2, Save } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { CONFIG_UPDATED_EVENT } from "@/hooks/use-booking-config";
 
 interface BookingConfig {
   id: number;
@@ -25,7 +26,7 @@ export default function BookingConfigSettings() {
   
   const { data: configs, isLoading, error } = useQuery<BookingConfig[]>({ 
     queryKey: ["/api/booking-configurations"],
-    staleTime: 1000 * 60, // 1 minute
+    staleTime: 0, // Changed from 1 minute to 0
   });
   
   useEffect(() => {
@@ -44,12 +45,36 @@ export default function BookingConfigSettings() {
       return await res.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["/api/booking-configurations"] });
+      // Force immediate invalidation with exact matching
+      queryClient.invalidateQueries({ 
+        queryKey: ['/api/booking-configurations'],
+        exact: true,
+        refetchType: 'active',
+      });
+      
+      // Reset the cache completely for this endpoint
+      queryClient.resetQueries({ 
+        queryKey: ['/api/booking-configurations'],
+        exact: true 
+      });
+      
+      // Force refetch
+      queryClient.refetchQueries({
+        queryKey: ['/api/booking-configurations'],
+        exact: true,
+        type: 'active'
+      });
+      
+      // Dispatch global event to notify other components
+      window.dispatchEvent(new CustomEvent(CONFIG_UPDATED_EVENT));
+
+      
       toast({
         title: "Configuration updated",
         description: "The booking configuration has been updated successfully.",
       });
     },
+        
     onError: (error: Error) => {
       toast({
         title: "Update failed",
