@@ -16,6 +16,7 @@ export interface IStorage {
   createUser(user: InsertUser): Promise<User>;
   updateUser(id: number, user: Partial<User>): Promise<User | undefined>;
   deleteUser(id: number): Promise<boolean>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   
   getAppointments(): Promise<Appointment[]>;
   getAppointmentsByUser(userId: number): Promise<Appointment[]>;
@@ -95,6 +96,21 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
 
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    try {
+      const [user] = await db.select().from(users).where(eq(users.email, email));
+      return user;
+    } catch (error) {
+      console.error('Error fetching user by email:', error);
+      return undefined;
+    }
+  }
+
+  async getUserByMobile(mobile: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.mobile, mobile));
+    return user;
+  }
+
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db
       .insert(users)
@@ -103,10 +119,10 @@ export class DatabaseStorage implements IStorage {
     return user;
   }
   
-  async updateUser(id: number, userUpdate: Partial<User>): Promise<User | undefined> {
+  async updateUser(id: number, user: Partial<User>): Promise<User | undefined> {
     const [updatedUser] = await db
       .update(users)
-      .set(userUpdate)
+      .set(user)
       .where(eq(users.id, id))
       .returning();
     return updatedUser;
@@ -120,8 +136,15 @@ export class DatabaseStorage implements IStorage {
     return result.length > 0;
   }
   
-  async getAppointments(): Promise<Appointment[]> {
-    return await db.select().from(appointments);
+  async getAppointments(): Promise<(Appointment & { user: User | null })[]> {
+    return await db
+      .select()
+      .from(appointments)
+      .leftJoin(users, eq(appointments.userId, users.id))
+      .then((rows) => rows.map(row => ({
+        ...row.appointments,
+        user: row.users
+      })));
   }
   
   async getAppointmentsByUser(userId: number): Promise<Appointment[]> {
@@ -165,10 +188,10 @@ export class DatabaseStorage implements IStorage {
     return newAppointment;
   }
   
-  async updateAppointment(id: number, appointmentUpdate: Partial<Appointment>): Promise<Appointment | undefined> {
+  async updateAppointment(id: number, appointment: Partial<Appointment>): Promise<Appointment | undefined> {
     const [updatedAppointment] = await db
       .update(appointments)
-      .set(appointmentUpdate)
+      .set(appointment)
       .where(eq(appointments.id, id))
       .returning();
     return updatedAppointment;
@@ -190,15 +213,37 @@ export class DatabaseStorage implements IStorage {
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
-    
-    return await db.select().from(availableSlots).where(
-      and(
-        gte(availableSlots.date, startOfDay),
-        lte(availableSlots.date, endOfDay)
-      )
-    );
+    try {
+      // Get all slots for the requested date and future dates
+      const slots = await db.select().from(availableSlots).where(
+        gte(availableSlots.date, startOfDay)
+      );
+      
+      // Get all appointments for the requested date and future dates
+      const existingAppointments = await db.select().from(appointments).where(
+        gte(appointments.date, startOfDay)
+      );
+      
+      // Mark slots as booked if they have an active appointment
+      const slotsWithBookingStatus = slots.map(slot => {
+        const isBooked = existingAppointments.some(appointment => 
+          appointment.status !== 'cancelled' &&
+          new Date(appointment.date).getTime() === new Date(slot.date).getTime()
+        );
+        
+        return {
+          ...slot,
+          isEnabled: slot.isEnabled, // Keep slots enabled even if booked
+          isBooked: isBooked, // Add explicit booked status
+          status: isBooked ? 'booked' : slot.isEnabled ? 'available' : 'disabled' // Add status field
+        };
+      });
+      
+      return slotsWithBookingStatus;
+    } catch (error) {
+      console.error('Error in getAvailableSlotsByDate:', error);
+      throw error;
+    }
   }
   
   async getAvailableSlotsByDateRange(startDate: Date, endDate: Date): Promise<AvailableSlot[]> {
@@ -221,10 +266,10 @@ export class DatabaseStorage implements IStorage {
     return newSlot;
   }
   
-  async updateAvailableSlot(id: number, slotUpdate: Partial<AvailableSlot>): Promise<AvailableSlot | undefined> {
+  async updateAvailableSlot(id: number, slot: Partial<AvailableSlot>): Promise<AvailableSlot | undefined> {
     const [updatedSlot] = await db
       .update(availableSlots)
-      .set(slotUpdate)
+      .set(slot)
       .where(eq(availableSlots.id, id))
       .returning();
     return updatedSlot;
@@ -255,10 +300,10 @@ export class DatabaseStorage implements IStorage {
     return newConfig;
   }
   
-  async updateBookingConfiguration(id: number, configUpdate: Partial<BookingConfiguration>): Promise<BookingConfiguration | undefined> {
+  async updateBookingConfiguration(id: number, config: Partial<BookingConfiguration>): Promise<BookingConfiguration | undefined> {
     const [updatedConfig] = await db
       .update(bookingConfigurations)
-      .set({...configUpdate, updatedAt: new Date()})
+      .set({...config, updatedAt: new Date()})
       .where(eq(bookingConfigurations.id, id))
       .returning();
     return updatedConfig;
@@ -363,6 +408,8 @@ export class MemStorage implements IStorage {
     bookingConfigs.forEach(config => {
       this.bookingConfigurations.set(config.id, config);
     });
+
+    
     
     // Create an admin user with hashed password
     // Create an initial admin user with pre-hashed password
@@ -374,11 +421,11 @@ export class MemStorage implements IStorage {
       username: "admin",
       password: adminHashedPassword,
       name: "Admin User",
-      email: "admin@example.com",
       address: "123 Admin St",
       mobile: "1234567890",
       isAdmin: true,
-      createdAt: new Date()
+      createdAt: new Date(),
+      blockedUntil: null,
     };
     this.users.set(adminUser.id, adminUser);
     
@@ -389,13 +436,26 @@ export class MemStorage implements IStorage {
       username: "user",
       password: testUserHashedPassword,
       name: "Test User",
-      email: "user@example.com",
       address: "456 User St",
       mobile: "0987654321",
       isAdmin: false,
-      createdAt: new Date()
+      createdAt: new Date(),
+      blockedUntil: null,
     };
     this.users.set(testUser.id, testUser);
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.email === email
+    );
+  }
+
+  // Add to MemStorage class
+  async getUserByMobile(mobile: string): Promise<User | undefined> {
+    return Array.from(this.users.values()).find(
+      (user) => user.mobile === mobile
+    );
   }
 
   async getUser(id: number): Promise<User | undefined> {
@@ -468,8 +528,14 @@ export class MemStorage implements IStorage {
   async createAppointment(appointment: InsertAppointment): Promise<Appointment> {
     const id = this.currentId.appointments++;
     const createdAt = new Date();
-    const status = "confirmed";
-    const newAppointment: Appointment = { ...appointment, id, status, createdAt };
+    const newAppointment: Appointment = {
+      id,
+      userId: appointment.userId,
+      date: new Date(appointment.date),
+      endTime: new Date(appointment.endTime),
+      status: "confirmed",
+      createdAt
+    };
     this.appointments.set(id, newAppointment);
     return newAppointment;
   }
@@ -499,12 +565,37 @@ export class MemStorage implements IStorage {
     const startOfDay = new Date(date);
     startOfDay.setHours(0, 0, 0, 0);
     
-    const endOfDay = new Date(date);
-    endOfDay.setHours(23, 59, 59, 999);
-    
-    return Array.from(this.availableSlots.values()).filter(
-      (slot) => slot.date >= startOfDay && slot.date <= endOfDay,
-    );
+    try {
+      // Get all slots for the requested date and future dates
+      const slots = Array.from(this.availableSlots.values()).filter(
+        slot => slot.date >= startOfDay
+      );
+      
+      // Get all appointments for the requested date and future dates
+      const existingAppointments = Array.from(this.appointments.values()).filter(
+        appointment => appointment.date >= startOfDay
+      );
+      
+      // Mark slots as booked if they have an active appointment
+      const slotsWithBookingStatus = slots.map(slot => {
+        const isBooked = existingAppointments.some(appointment => 
+          appointment.status !== 'cancelled' &&
+          new Date(appointment.date).getTime() === new Date(slot.date).getTime()
+        );
+        
+        return {
+          ...slot,
+          isEnabled: slot.isEnabled, // Keep slots enabled even if booked
+          isBooked: isBooked, // Add explicit booked status
+          status: isBooked ? 'booked' : slot.isEnabled ? 'available' : 'disabled' // Add status field
+        };
+      });
+      
+      return slotsWithBookingStatus;
+    } catch (error) {
+      console.error('Error in getAvailableSlotsByDate:', error);
+      throw error;
+    }
   }
   
   async getAvailableSlotsByDateRange(startDate: Date, endDate: Date): Promise<AvailableSlot[]> {

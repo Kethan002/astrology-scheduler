@@ -62,46 +62,75 @@ export function setupAuth(app: Express) {
   );
 
   passport.serializeUser((user, done) => done(null, user.id));
-  passport.deserializeUser(async (id: number, done) => {
+  passport.deserializeUser(async (id, done) => {
     try {
-      const user = await storage.getUser(id);
+      // Convert id to number if it's a string
+      const userId = typeof id === 'string' ? parseInt(id, 10) : id;
+      const user = await storage.getUser(userId);
+      
+      if (!user) {
+        return done(null, false);
+      }
+      
       done(null, user);
     } catch (error) {
+      console.error("Error deserializing user:", error);
       done(error);
     }
   });
 
   app.post("/api/register", async (req, res, next) => {
     try {
-      // Validate the request body
-      const validatedUser = insertUserSchema.parse(req.body);
-      
-      // Check if username already exists
+      // Ensure mobile is either provided or set to null
+      const body = {
+        ...req.body,
+        mobile: req.body.mobile || null // Set to null if not provided
+      };
+  
+      const validatedUser = insertUserSchema.parse(body);
+    
+      // Check username exists
       const existingUser = await storage.getUserByUsername(validatedUser.username);
       if (existingUser) {
         return res.status(400).json({ message: "Username already exists" });
       }
-
-      // Hash the password and create the user
+  
+      const existingEmail = await storage.getUserByEmail(validatedUser.email);
+      if (existingEmail) {
+        return res.status(400).json({ message: "Email already exists" });
+      }
+  
       const user = await storage.createUser({
         ...validatedUser,
         password: await hashPassword(validatedUser.password),
       });
-
-      // Log the user in
+  
       req.login(user, (err) => {
         if (err) return next(err);
-        // Don't send the password back
         const { password, ...userWithoutPassword } = user;
         res.status(201).json(userWithoutPassword);
       });
-    } catch (error) {
-      if (error instanceof ZodError) {
-        res.status(400).json({ message: fromZodError(error).message });
-      } else {
-        next(error);
+    } catch (error: any) {
+      console.error('Registration Error:', error);
+    
+      // Prisma unique constraint error (in case you still have DB-level checks)
+      if (error.code === 'P2002') {
+        const fields = error.meta?.target || [];
+    
+        if (fields.includes('username')) {
+          return res.status(400).json({ message: 'Username already exists' });
+        }
+        if (fields.includes('email')) {
+          return res.status(400).json({ message: 'Email already exists' });
+        }
+        return res.status(400).json({ message: 'Username or Email already exists' });
       }
+    
+      // Generic fallback
+      return res.status(500).json({ message: 'Registration failed. Please try again.' });
     }
+    
+    
   });
 
   app.post("/api/login", (req, res, next) => {
