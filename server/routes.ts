@@ -62,7 +62,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Send OTP via email
       await transporter.sendMail({
-        from: 'veldandikethankumar@gmail.com',
+        from: 'veldandi.omkaram@gmail.com',
         to: email,
         subject: 'Your OTP for Registration',
         text: `Your OTP is ${otp}. It will expire in 3 minutes.`
@@ -128,7 +128,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
 
       // Send OTP via email
       await transporter.sendMail({
-        from: 'veldandikethankumar@gmail.com',
+        from: 'veldandi.omkaram@gmail.com',
         to: email,
         subject: 'Your OTP for Password Reset',
         text: `Your OTP is ${otp}. It will expire in 3 minutes.`
@@ -484,7 +484,7 @@ export async function registerRoutes(app: Express): Promise<Server> {
           `;
           // Send the email
           await transporter.sendMail({
-            from: process.env.EMAIL_USER || 'veldandikethankumar@gmail.com',
+            from: process.env.EMAIL_USER || 'veldandi.omkaram@gmail.com',
             to: user.email,
             subject: emailSubject,
             text: emailBody
