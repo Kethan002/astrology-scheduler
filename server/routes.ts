@@ -806,6 +806,52 @@ export async function registerRoutes(app: Express): Promise<Server> {
       res.status(500).json({ message: "Failed to update booking configuration" });
     }
   });
+
+  // Debug endpoint for booking issues
+  app.get("/api/debug/booking-status", isAuthenticated, async (req, res) => {
+    try {
+      if (!req.user) {
+        return res.status(401).json({ message: "User not authenticated" });
+      }
+      
+      const userId = req.user.id;
+      const user = await storage.getUser(userId);
+      
+      // Get user's appointments for the current week
+      const now = new Date();
+      const startOfWeek = new Date(now);
+      startOfWeek.setDate(now.getDate() - now.getDay());
+      startOfWeek.setHours(0, 0, 0, 0);
+      
+      const endOfWeek = new Date(startOfWeek);
+      endOfWeek.setDate(startOfWeek.getDate() + 6);
+      endOfWeek.setHours(23, 59, 59, 999);
+      
+      const weeklyAppointments = await storage.getAppointmentsByDateRange(startOfWeek, endOfWeek);
+      const userAppointmentsInWeek = weeklyAppointments.filter(a => a.userId === userId);
+
+      res.json({
+        user: {
+          id: user?.id,
+          hasMobile: !!user?.mobile,
+          isBlocked: user?.blockedUntil ? new Date(user.blockedUntil) > new Date() : false,
+          blockedUntil: user?.blockedUntil
+        },
+        weeklyAppointments: userAppointmentsInWeek.length,
+        bookingConfig: {
+          disabledDays: (await storage.getBookingConfigurationByKey('disabled_days'))?.value,
+          morningSlotStart: (await storage.getBookingConfigurationByKey('morning_slot_start'))?.value,
+          morningSlotEnd: (await storage.getBookingConfigurationByKey('morning_slot_end'))?.value,
+          afternoonSlotStart: (await storage.getBookingConfigurationByKey('afternoon_slot_start'))?.value,
+          afternoonSlotEnd: (await storage.getBookingConfigurationByKey('afternoon_slot_end'))?.value
+        }
+      });
+    } catch (error) {
+      console.error("Debug endpoint error:", error);
+      res.status(500).json({ message: "Failed to get debug information" });
+    }
+  });
+
   const httpServer = createServer(app);
   return httpServer;
 }
