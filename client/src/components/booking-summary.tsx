@@ -42,10 +42,23 @@ export default function BookingSummary({ selectedDate, selectedTime, onConfirm, 
         duration: 15
       };
 
+      console.log('Attempting to book appointment with data:', {
+        startDate: startDate.toISOString(),
+        endDate: endDate.toISOString(),
+        hours: startDate.getHours(),
+        minutes: startDate.getMinutes(),
+        day: startDate.getDay()
+      });
+
       try {
         const response = await apiRequest('POST', '/api/appointments', appointmentData);
         if (!response.ok) {
           const errorData = await response.json();
+          console.error('Booking error details:', {
+            status: response.status,
+            statusText: response.statusText,
+            errorData
+          });
           throw new Error(errorData.message || 'Failed to book appointment');
         }
         return await response.json();
