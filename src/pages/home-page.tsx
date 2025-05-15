@@ -7,7 +7,6 @@ import TimeSlots from "@/components/time-slots";
 import BookingSummary from "@/components/booking-summary";
 import MyAppointments from "@/components/my-appointments";
 import ProfileSettings from "@/components/profile-settings";
-import BookingDebug from "@/components/booking-debug";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { InfoIcon, AlertCircle, Clock } from "lucide-react";
 import { useLocation } from "wouter";
@@ -138,9 +137,6 @@ export default function HomePage() {
           {activeTab === "book" && (
             <div className="max-w-5xl mx-auto">
               <h2 className="font-heading text-2xl font-bold text-gray-800 mb-6">Book Your Astrology Consultation</h2>
-              
-              {/* Add debug component */}
-              <BookingDebug />
               
               {/* Booking window alert */}
               {!canBook && !user?.isAdmin && (
